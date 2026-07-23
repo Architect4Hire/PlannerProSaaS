@@ -1,0 +1,7 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\PlannerPro.Contracts\PlannerPro.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

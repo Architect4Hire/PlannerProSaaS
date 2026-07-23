@@ -25,7 +25,7 @@ provisioning) is **not**; stop and ask.
 
 | You need… | Add in AppHost | Referenced by | Consumed via |
 |---|---|---|---|
-| A database for a service | `pg.AddDatabase("<svc>db")` on the shared Postgres server | that one service host (`WithReference` + `WaitFor`) | Aspire Npgsql integration → `<Service>DbContext` |
+| A database for a service | `sql.AddDatabase("<svc>db")` on the shared SQL Server instance | that one service host (`WithReference` + `WaitFor`) | Aspire SQL Server integration → `<Service>DbContext` |
 | A topic/subscription for an event | a topic + per-consumer subscription on `servicebus` | publisher + each consuming host | `AddAzureServiceBusClient` (already wired) |
 | A blob container | on the Azurite `storage` resource | the owning service only | Aspire Blob client integration |
 | A cache for a hot read | `AddRedis("cache")` | the service(s) that cache | Aspire Redis integration → facade cache |

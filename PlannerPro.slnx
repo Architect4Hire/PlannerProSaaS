@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PlannerPro.AppHost/PlannerPro.AppHost.csproj" />
+    <Project Path="src/PlannerPro.Contracts/PlannerPro.Contracts.csproj" />
+    <Project Path="src/PlannerPro.Gateway/PlannerPro.Gateway.csproj" />
+    <Project Path="src/PlannerPro.ServiceDefaults/PlannerPro.ServiceDefaults.csproj" />
+    <Project Path="src/PlannerPro.Shared/PlannerPro.Shared.csproj" />
+  </Folder>
+</Solution>

@@ -15,7 +15,7 @@ or consumer is the `add-endpoint` skill; these are the standing rules.
 - **The host is thin.** `PlannerPro.<Service>` holds only entry points — `Controllers/`, `Consumers/`
   — and the composition root (`Program.cs`). No business logic, EF, or data access in the host.
 - **`.Core` holds the stack.** Facade → business → data layer → repository, plus models, validators,
-  and mappers, all live in `PlannerPro.<Service>.Core`. EF Core / Npgsql lives here, never in the host.
+  and mappers, all live in `PlannerPro.<Service>.Core`. EF Core / SQL Server lives here, never in the host.
 - **The layers, and their strict responsibilities:**
   - **Controller / Consumer** — bind a ViewModel (or map an integration event) and call the facade;
     return an `ActionResult<ServiceModel>`. A consumer is idempotent (inbox) and receives its tenant
@@ -33,7 +33,7 @@ or consumer is the `add-endpoint` skill; these are the standing rules.
 - **`TenantId` is never a ViewModel field.** It arrives ambiently (header or envelope) and is stamped
   by the interceptor. A ViewModel carrying one is a security bug — see `.claude/rules/tenancy.md`.
 - **DbContext via Aspire.** `<Service>DbContext` (in `.Core`, deriving from the Shared base context)
-  is registered through the Aspire Npgsql integration keyed to the service's database resource (e.g.
+  is registered through the Aspire SQL Server integration keyed to the service's database resource (e.g.
   `planningdb`), not by reading a raw connection string.
 - **Registration is owned by `.Core`.** Expose `Add<Service>Core()` from the library (registers every
   layer + validators from its own assembly); the host's `Program.cs` calls it plus the Shared

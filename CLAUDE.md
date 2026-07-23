@@ -17,7 +17,7 @@
 **Stack**
 
 - **Orchestration:** Aspire 13 (AppHost + ServiceDefaults) on .NET 10
-- **Services — two projects each, one bounded context each.** A service is a **thin host** (`PlannerPro.<Service>`, ASP.NET Core Web API: entry points + composition root only) plus a **class library** (`PlannerPro.<Service>.Core`) holding the whole **facade → business → data layer → repository** stack and its models/validators/mappers. The host references its own `.Core`; nothing else. EF Core / Npgsql lives in `.Core`.
+- **Services — two projects each, one bounded context each.** A service is a **thin host** (`PlannerPro.<Service>`, ASP.NET Core Web API: entry points + composition root only) plus a **class library** (`PlannerPro.<Service>.Core`) holding the whole **facade → business → data layer → repository** stack and its models/validators/mappers. The host references its own `.Core`; nothing else. EF Core / SQL Server lives in `.Core`.
   - `PlannerPro.Access` (+`.Core`) — **global** accounts + token issuance, and **tenant-scoped** tenants, settings, branding, memberships, invitations. Owns `accessdb`. Publishes `TenantProvisioned`, `TenantStatusChanged`, `TenantSettingsChanged`, `TenantBrandingChanged`, `MemberInvited`, `InvitationAccepted`, `MembershipChanged`.
   - `PlannerPro.Portfolio` (+`.Core`) — clients, teams, team members, projects. Owns `portfoliodb`. Publishes `ClientCreated`, `ClientArchived`, `TeamChanged`, `ProjectCreated`, `ProjectArchived`.
   - `PlannerPro.Planning` (+`.Core`) — sprints, sprint goals, tasks, capacity. The product core. Owns `planningdb`. Consumes `ProjectCreated`/`ProjectArchived`, `TenantSettingsChanged`. Publishes `SprintGoalSet`, `TaskChanged`, `CapacitySet`.
@@ -31,7 +31,7 @@
 - **Shared contracts:** `src/PlannerPro.Contracts/` — integration-event records (each an `IIntegrationEvent` carrying `Id`, **`TenantId`**, `CorrelationId`, `CausationId`, and actor). No domain logic, no EF. It's a leaf: references nothing, referenced by everything.
 - **Messaging:** **Azure Service Bus** for integration events, run locally as an **emulator** container via Aspire. Reliability is a **hand-rolled transactional outbox** in `PlannerPro.Shared` (per-service tables) — the event is written to that service's own `OutboxMessages` table in the *same transaction* as the domain write, and a background dispatcher relays it afterward. No MassTransit, no third-party outbox.
 - **Frontend:** Angular 22 — **zoneless, signal-first**, standalone components, strict TS, `httpResource` for reads — in `src/web/`, run via `AddJavaScriptApp`, calling **only** the gateway.
-- **Data/infra (local containers via Aspire):** one PostgreSQL server with a database *per service*, the Azure Service Bus emulator, Azurite for blobs, and Redis where a service needs a cache. No cloud spend.
+- **Data/infra (local containers via Aspire):** one SQL Server instance with a database *per service*, the Azure Service Bus emulator, Azurite for blobs, and Redis where a service needs a cache. No cloud spend.
 
 **Layout**
 
@@ -106,7 +106,7 @@ src/
 
 ## Usage
 
-- The world is **local**: Aspire orchestrates every service, the gateway, the Angular app, and all backing resources (Postgres with a database per service, the Service Bus emulator, Azurite, Redis) as local containers — no cloud dependencies. The dashboard is the front door for logs, traces, and health; a request should be followable from the gateway through the owning service and onto the bus.
+- The world is **local**: Aspire orchestrates every service, the gateway, the Angular app, and all backing resources (SQL Server with a database per service, the Service Bus emulator, Azurite, Redis) as local containers — no cloud dependencies. The dashboard is the front door for logs, traces, and health; a request should be followable from the gateway through the owning service and onto the bus.
 - **`TenantId` is a tag on every span and log scope.** Debugging a multi-tenant system without it is guesswork.
 - The Angular app is the primary consumer, and it consumes **the gateway** — keep that contract stable; the service boundaries behind it can move.
 - Available tooling in `.claude/`: rules auto-load from `.claude/rules/`; task skills live in `.claude/skills/` (`add-endpoint`, `add-tenant-scoped-entity`, `add-component`, `add-aspire-resource`, `add-audit-event`, `trace-a-request`); subagents are available but run **read-only**.

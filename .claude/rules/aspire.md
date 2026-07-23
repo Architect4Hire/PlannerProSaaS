@@ -7,9 +7,9 @@ paths:
 
 The AppHost is the single source of truth for the application model. Keep it declarative.
 
-- **Declare every resource here.** The Postgres server and each per-service database, the Azure
+- **Declare every resource here.** The SQL Server instance and each per-service database, the Azure
   Service Bus emulator, Azurite, Redis, every service host, the gateway, and the Angular app are all
-  added in the AppHost — e.g. `AddPostgres("pg")` then `.AddDatabase("planningdb")` /
+  added in the AppHost — e.g. `AddSqlServer("sql")` then `.AddDatabase("planningdb")` /
   `.AddDatabase("accessdb")` (one database per service),
   `AddAzureServiceBus("servicebus").RunAsEmulator(...)`,
   `AddAzureStorage("storage").RunAsEmulator(...)`,
@@ -22,7 +22,7 @@ The AppHost is the single source of truth for the application model. Keep it dec
 - **Local-first.** Backing resources run as local containers — no cloud resources in this showcase.
   An *emulator-backed* Azure resource is in bounds because it is a local container:
   `AddAzureServiceBus(...).RunAsEmulator(...)` and `AddAzureStorage(...).RunAsEmulator(...)` run
-  exactly as `AddPostgres` runs Postgres. The test is where it runs, not what the API is called.
+  exactly as `AddSqlServer` runs SQL Server. The test is where it runs, not what the API is called.
   What stays out is anything needing a real subscription — `AsExisting`, or provisioned for real.
 - **Wire with the model, not with strings.** Connect services with `WithReference(...)` (their
   database, the Service Bus, storage, the cache) and order startup with `WaitFor(...)`. Never
