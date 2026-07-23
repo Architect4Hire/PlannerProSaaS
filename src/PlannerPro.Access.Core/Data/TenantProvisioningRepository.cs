@@ -22,8 +22,13 @@ namespace PlannerPro.Access.Core.Data;
 /// exists to provide.
 /// </remarks>
 public sealed class TenantProvisioningRepository(DbContextOptions<AccessDbContext> options)
-    : RepositoryBase<AccessDbContext>(new AccessDbContext(options, new SystemTenantContext())), ITenantProvisioningRepository
+    : RepositoryBase<AccessDbContext>(new AccessDbContext(options, new SystemTenantContext())), ITenantProvisioningRepository, IAsyncDisposable
 {
+    // Unlike TenantRepository/TenantMembershipRepository, which build a per-call context inside a
+    // local `using`, this context is a base-class field constructed once in the primary constructor —
+    // DI has no way to see it and dispose it on its own, so this type must dispose it itself.
+    public ValueTask DisposeAsync() => Context.DisposeAsync();
+
     public Task ProvisionAsync(
         Tenant tenant,
         TenantSettings settings,

@@ -15,7 +15,8 @@ namespace PlannerPro.Access.Core.Business;
 /// <see cref="TenantProvisioned"/> with its full envelope. <see cref="ApplicationUser"/> creation goes
 /// through <see cref="UserManager{TUser}"/> first and outside the tenant-write transaction — same
 /// reasoning as <see cref="AuthBusiness"/>'s doc comment: Identity is the repository for this global
-/// slice. If it fails, no tenant row is ever attempted.
+/// slice. If it fails, no tenant row is ever attempted. If the tenant write fails after the user was
+/// already created, the user is deleted again (best-effort) rather than left orphaned.
 /// </summary>
 public sealed class TenantProvisioningBusiness(
     UserManager<ApplicationUser> userManager,
@@ -36,9 +37,7 @@ public sealed class TenantProvisioningBusiness(
         var createResult = await userManager.CreateAsync(user, viewModel.OwnerPassword);
         if (!createResult.Succeeded)
         {
-            var failures = createResult.Errors
-                .Select(error => new ValidationFailure(nameof(viewModel.OwnerEmail), error.Description));
-            throw new ValidationException(failures);
+            throw new ValidationException(MapIdentityErrors(createResult, viewModel));
         }
 
         var tenantId = Guid.NewGuid();
@@ -70,8 +69,37 @@ public sealed class TenantProvisioningBusiness(
             Slug: viewModel.Slug,
             TenantName: viewModel.TenantName);
 
-        await dataLayer.ProvisionAsync(tenant, settings, branding, ownerMembership, provisionedEvent, ct);
+        try
+        {
+            await dataLayer.ProvisionAsync(tenant, settings, branding, ownerMembership, provisionedEvent, ct);
+        }
+        catch (Exception)
+        {
+            // The Identity user above already committed, outside this transaction. If the tenant write
+            // failed for any reason, don't leave a permanently orphaned account behind — with
+            // RequireUniqueEmail on, that email could never sign up again otherwise. Best-effort: a
+            // failure deleting it here must not hide the original error.
+            await userManager.DeleteAsync(user);
+
+            // A concurrent signup for the same slug can race past the check above and lose only at the
+            // database's unique index. Recognize that case by re-checking rather than parsing a
+            // provider-specific exception, so the caller gets the same clean 400 either way.
+            if (await tenantRepository.FindBySlugAsync(viewModel.Slug, ct) is not null)
+            {
+                throw new ValidationException(
+                    [new ValidationFailure(nameof(viewModel.Slug), "This slug is already in use.")]);
+            }
+
+            throw;
+        }
 
         return new TenantProvisionedServiceModel(tenantId, viewModel.Slug, user.Id, viewModel.OwnerEmail);
     }
+
+    private static IEnumerable<ValidationFailure> MapIdentityErrors(IdentityResult result, SignupViewModel viewModel) =>
+        result.Errors.Select(error => new ValidationFailure(
+            error.Code.StartsWith("Password", StringComparison.Ordinal)
+                ? nameof(viewModel.OwnerPassword)
+                : nameof(viewModel.OwnerEmail),
+            error.Description));
 }

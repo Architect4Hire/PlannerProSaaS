@@ -17,6 +17,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="PlannerPro.Shared.Tests" />
+    <!-- Lets PlannerPro.Portfolio.Tests assert IntegrationEventConsumerRegistry actually has an entry
+         for TenantProvisioned — a copy-pasted-wrong-event-type registration would otherwise only
+         surface as a silent dead-letter once real messages flow. -->
+    <InternalsVisibleTo Include="PlannerPro.Portfolio.Tests" />
   </ItemGroup>
 
 </Project>

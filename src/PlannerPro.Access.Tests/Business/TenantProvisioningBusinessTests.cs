@@ -1,8 +1,10 @@
 using FluentValidation;
 using PlannerPro.Access.Core.Business;
+using PlannerPro.Access.Core.Data;
 using PlannerPro.Access.Core.Managers.Models.Domain;
 using PlannerPro.Access.Core.Managers.Models.ViewModels;
 using PlannerPro.Access.Tests.TestSupport;
+using PlannerPro.Contracts;
 
 namespace PlannerPro.Access.Tests.Business;
 
@@ -80,5 +82,52 @@ public sealed class TenantProvisioningBusinessTests : IDisposable
         Assert.False(dataLayer.WasCalled);
     }
 
+    [Fact]
+    public async Task ProvisionAsync_DataLayerFailsForAnUnrelatedReason_DeletesTheOrphanedUserAndRethrows()
+    {
+        var tenantRepository = new StubTenantRepository();
+        var dataLayer = new ThrowingTenantProvisioningDataLayer();
+        var business = new TenantProvisioningBusiness(_harness.UserManager, tenantRepository, dataLayer);
+        var viewModel = new SignupViewModel("acme", "Acme Inc", "owner@acme.test", "Correct-Horse-1");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => business.ProvisionAsync(viewModel, Guid.NewGuid()));
+
+        // The Identity user was created before the failing tenant write — it must not survive, or that
+        // email could never sign up again (RequireUniqueEmail).
+        Assert.Null(await _harness.UserManager.FindByEmailAsync("owner@acme.test"));
+    }
+
+    [Fact]
+    public async Task ProvisionAsync_SlugTakenByAConcurrentSignupBetweenTheCheckAndTheWrite_TranslatesToValidationExceptionAndDeletesTheOrphanedUser()
+    {
+        var tenantRepository = new StubTenantRepository();
+        // Simulates a concurrent signup winning the race on the DB's unique index: by the time this
+        // request's write fails, the slug now resolves to somebody else's tenant.
+        var dataLayer = new ThrowingTenantProvisioningDataLayer(seedRepositoryOnFailure: tenantRepository);
+        var business = new TenantProvisioningBusiness(_harness.UserManager, tenantRepository, dataLayer);
+        var viewModel = new SignupViewModel("acme", "Acme Inc", "owner@acme.test", "Correct-Horse-1");
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => business.ProvisionAsync(viewModel, Guid.NewGuid()));
+
+        Assert.Contains(ex.Errors, failure => failure.PropertyName == nameof(SignupViewModel.Slug));
+        Assert.Null(await _harness.UserManager.FindByEmailAsync("owner@acme.test"));
+    }
+
     public void Dispose() => _harness.Dispose();
+
+    private sealed class ThrowingTenantProvisioningDataLayer(StubTenantRepository? seedRepositoryOnFailure = null)
+        : ITenantProvisioningDataLayer
+    {
+        public Task ProvisionAsync(
+            Tenant tenant, TenantSettings settings, TenantBranding branding, TenantMembership ownerMembership,
+            TenantProvisioned provisionedEvent, CancellationToken ct = default)
+        {
+            if (seedRepositoryOnFailure is not null)
+            {
+                seedRepositoryOnFailure.Tenant = tenant;
+            }
+
+            throw new InvalidOperationException("Simulated tenant-write failure.");
+        }
+    }
 }

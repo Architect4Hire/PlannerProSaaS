@@ -51,11 +51,23 @@ public sealed class SignupControllerTests
     }
 
     [Fact]
-    public async Task Signup_MissingOrUnparseableCorrelationHeader_MintsItsOwnRatherThanFailing()
+    public async Task Signup_MissingCorrelationHeader_MintsItsOwnRatherThanFailing()
     {
         var expected = new TenantProvisionedServiceModel(Guid.NewGuid(), "acme", Guid.NewGuid(), "owner@acme.test");
         var facade = new RecordingTenantFacade(expected);
         var controller = BuildController(facade, correlationHeader: null);
+
+        await controller.Signup(new SignupViewModel("acme", "Acme Inc", "owner@acme.test", "Correct-Horse-1"), CancellationToken.None);
+
+        Assert.NotEqual(Guid.Empty, facade.CapturedCorrelationId);
+    }
+
+    [Fact]
+    public async Task Signup_UnparseableCorrelationHeader_MintsItsOwnRatherThanFailing()
+    {
+        var expected = new TenantProvisionedServiceModel(Guid.NewGuid(), "acme", Guid.NewGuid(), "owner@acme.test");
+        var facade = new RecordingTenantFacade(expected);
+        var controller = BuildController(facade, correlationHeader: "not-a-guid");
 
         await controller.Signup(new SignupViewModel("acme", "Acme Inc", "owner@acme.test", "Correct-Horse-1"), CancellationToken.None);
 

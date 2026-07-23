@@ -27,29 +27,48 @@ namespace PlannerPro.Access.Tests;
 /// unhandled <c>BackgroundService</c> exception. That default is exactly right in production (fail
 /// loudly rather than run half-broken); it's wrong for THIS test, whose only job is checking that DI
 /// wiring resolves, not that a live outbox poll succeeds against real infrastructure.
+/// <para>
+/// A placeholder Service Bus <em>namespace</em> — not a connection string, no key or secret — is set
+/// as a process environment variable here, test-only, rather than checked into <c>appsettings.json</c>:
+/// CLAUDE.md's "no hardcoded connection strings, broker addresses… ever" rule means this placeholder
+/// belongs in the test that needs it (to let <c>ServiceBusClient</c> construct at all, without dialing
+/// out), not in source everyone ships. An environment variable, not <c>ConfigureAppConfiguration</c>,
+/// because <see cref="WebApplicationFactory{TEntryPoint}"/>'s deferred host builder for a top-level-
+/// statement <c>Program.cs</c> doesn't reliably thread an in-memory config source through in time —
+/// environment variables are read directly by the standard config chain regardless.
+/// </para>
 /// </remarks>
 public sealed class CompositionRootTests
 {
     [Fact]
     public async Task ServiceGraph_ResolvesWithoutError_FromTheRealCompositionRoot()
     {
-        await using var factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder => builder
-                .UseEnvironment("Development")
-                .ConfigureServices(services => services.Configure<HostOptions>(
-                    options => options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore)));
-
-        using var scope = factory.Services.CreateScope();
-
-        var exception = Record.Exception(() =>
+        Environment.SetEnvironmentVariable(
+            "Aspire__Azure__Messaging__ServiceBus__FullyQualifiedNamespace", "localhost.servicebus.windows.net");
+        try
         {
-            scope.ServiceProvider.GetRequiredService<AccessDbContext>();
-            scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-            scope.ServiceProvider.GetRequiredService<SignInManager<ApplicationUser>>();
-            scope.ServiceProvider.GetRequiredService<IAuthFacade>();
-            scope.ServiceProvider.GetRequiredService<ITenantResolutionFacade>();
-        });
+            await using var factory = new WebApplicationFactory<Program>()
+                .WithWebHostBuilder(builder => builder
+                    .UseEnvironment("Development")
+                    .ConfigureServices(services => services.Configure<HostOptions>(
+                        options => options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore)));
 
-        Assert.Null(exception);
+            using var scope = factory.Services.CreateScope();
+
+            var exception = Record.Exception(() =>
+            {
+                scope.ServiceProvider.GetRequiredService<AccessDbContext>();
+                scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+                scope.ServiceProvider.GetRequiredService<SignInManager<ApplicationUser>>();
+                scope.ServiceProvider.GetRequiredService<IAuthFacade>();
+                scope.ServiceProvider.GetRequiredService<ITenantResolutionFacade>();
+            });
+
+            Assert.Null(exception);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("Aspire__Azure__Messaging__ServiceBus__FullyQualifiedNamespace", null);
+        }
     }
 }
