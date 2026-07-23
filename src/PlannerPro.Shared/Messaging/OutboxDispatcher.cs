@@ -35,6 +35,27 @@ internal sealed class OutboxDispatcher<TContext>(
             {
                 // Expected on shutdown; the loop condition above ends it.
             }
+            catch (Exception ex)
+            {
+                // A transient failure here (the database briefly unreachable, etc.) must not take the
+                // whole host down — BackgroundService's default is to stop and dispose the host on any
+                // unhandled exception from ExecuteAsync. Log loudly and retry next poll instead; the
+                // outbox row itself is untouched, so nothing is lost.
+                logger.LogError(ex, "Outbox poll failed; retrying in {PollInterval}.", pollInterval);
+                await TryDelayAsync(stoppingToken);
+            }
+        }
+    }
+
+    private async Task TryDelayAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await Task.Delay(pollInterval, stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Expected on shutdown; the loop condition in ExecuteAsync ends it.
         }
     }
 

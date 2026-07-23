@@ -60,6 +60,47 @@ public sealed class OutboxDispatcherTests : IDisposable
         Assert.NotNull(newer.ProcessedOnUtc);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_APollThrowsTransiently_LogsAndRetriesRatherThanStoppingTheHost()
+    {
+        var messageId = await SeedOutboxRowAsync(Guid.NewGuid(), Guid.NewGuid(), null, DateTime.UtcNow);
+        var flakyScopeFactory = new FailOnceThenDelegateScopeFactory(BuildScopeFactory());
+        var sender = new FakeServiceBusSender();
+        var dispatcher = new OutboxDispatcher<TestDbContext>(
+            sender, flakyScopeFactory, NullLogger<OutboxDispatcher<TestDbContext>>.Instance, TimeSpan.FromMilliseconds(20));
+
+        await dispatcher.StartAsync(CancellationToken.None);
+        try
+        {
+            // First poll throws (simulated transient DB failure); the second, ~20ms later, must still
+            // run and succeed — proving the failure was caught and logged, not left to fault/stop the
+            // whole BackgroundService.
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (sender.SentMessages.Count == 0 && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(20);
+            }
+
+            Assert.False(dispatcher.ExecuteTask!.IsFaulted, "A transient poll failure must not fault the background service.");
+            var sent = Assert.Single(sender.SentMessages);
+            Assert.Equal(messageId.ToString(), sent.MessageId);
+        }
+        finally
+        {
+            await dispatcher.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private sealed class FailOnceThenDelegateScopeFactory(IServiceScopeFactory inner) : IServiceScopeFactory
+    {
+        private int _calls;
+
+        public IServiceScope CreateScope() =>
+            Interlocked.Increment(ref _calls) == 1
+                ? throw new InvalidOperationException("Simulated transient failure.")
+                : inner.CreateScope();
+    }
+
     private async Task<Guid> SeedOutboxRowAsync(Guid tenantId, Guid correlationId, Guid? causationId, DateTime occurredOnUtc)
     {
         var id = Guid.NewGuid();

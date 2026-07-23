@@ -22,6 +22,8 @@ internal sealed class ServiceBusProcessorHost(
     string topicName,
     string subscriptionName) : BackgroundService
 {
+    private static readonly TimeSpan StartRetryDelay = TimeSpan.FromSeconds(5);
+
     private ServiceBusProcessor? _processor;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -34,7 +36,7 @@ internal sealed class ServiceBusProcessorHost(
         _processor.ProcessMessageAsync += ProcessMessageAsync;
         _processor.ProcessErrorAsync += ProcessErrorAsync;
 
-        await _processor.StartProcessingAsync(stoppingToken);
+        await StartProcessingWithRetryAsync(stoppingToken);
 
         try
         {
@@ -43,6 +45,43 @@ internal sealed class ServiceBusProcessorHost(
         catch (OperationCanceledException)
         {
             // Expected on shutdown.
+        }
+    }
+
+    /// <summary>
+    /// A single failed <c>StartProcessingAsync</c> call (Service Bus unreachable for a moment at
+    /// startup, despite the AppHost's <c>WaitFor</c>) must not take the whole host down the same way —
+    /// once actually connected, the SDK's own processor already handles reconnection after transient
+    /// mid-run network blips internally; this loop only covers the narrower startup race.
+    /// </summary>
+    private async Task StartProcessingWithRetryAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await _processor!.StartProcessingAsync(stoppingToken);
+                return;
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex,
+                    "Failed to start the Service Bus processor for {Topic}/{Subscription}; retrying in {Delay}.",
+                    topicName, subscriptionName, StartRetryDelay);
+
+                try
+                {
+                    await Task.Delay(StartRetryDelay, stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+            }
         }
     }
 
