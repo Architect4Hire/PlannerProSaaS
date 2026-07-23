@@ -15,6 +15,9 @@ public static class SharedServiceCollectionExtensions
     /// in-memory cache by default (<c>AddDistributedMemoryCache</c> uses try-add semantics); a
     /// service that wires a different backend (e.g. Redis via the Aspire client integration) must
     /// register it BEFORE calling this method so its registration wins.
+    /// <see cref="Inbox{TContext}"/> depends on <see cref="Tenancy.ITenantContext"/> (it sources the
+    /// tenant id it stamps from there, never from a caller), so <see cref="AddSharedTenancy"/> must
+    /// also be called on the same <see cref="IServiceCollection"/>.
     /// </summary>
     public static IServiceCollection AddSharedPersistence<TContext>(this IServiceCollection services)
         where TContext : SharedDbContext

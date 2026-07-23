@@ -11,10 +11,11 @@ public sealed class Outbox<TContext>(TContext dbContext) : IOutbox where TContex
         {
             Id = @event.Id,
             TenantId = @event.TenantId,
-            // Assembly-qualified so a future dispatcher can reflectively deserialize Content back
-            // to the exact event type; not the same as the short event-type name messaging.md
-            // describes for the eventual ServiceBusMessage.Subject.
+            // Assembly-qualified so a future consumer-side deserializer could reflectively resolve
+            // the exact event type if ever needed; EventTypeName below — not this — is what
+            // OutboxDispatcher sends as ServiceBusMessage.Subject.
             Type = @event.GetType().AssemblyQualifiedName!,
+            EventTypeName = @event.GetType().Name,
             Content = JsonSerializer.Serialize(@event, @event.GetType()),
             CorrelationId = @event.CorrelationId,
             CausationId = @event.CausationId,

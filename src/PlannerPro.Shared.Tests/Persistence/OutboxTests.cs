@@ -35,6 +35,7 @@ public sealed class OutboxTests : IDisposable
         Assert.Equal(@event.CausationId, persisted.CausationId);
         Assert.Equal(@event.ActorId, persisted.ActorId);
         Assert.Equal(typeof(TestEvent).AssemblyQualifiedName, persisted.Type);
+        Assert.Equal(nameof(TestEvent), persisted.EventTypeName);
         Assert.Contains("hello", persisted.Content);
         Assert.Null(persisted.ProcessedOnUtc);
     }

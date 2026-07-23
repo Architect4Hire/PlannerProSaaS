@@ -46,6 +46,7 @@ public sealed class RepositoryBaseTests : IDisposable
         Id = Guid.NewGuid(),
         TenantId = tenantId,
         Type = "test",
+        EventTypeName = "Test",
         Content = "{}",
         CorrelationId = Guid.NewGuid(),
         ActorId = Guid.NewGuid(),
