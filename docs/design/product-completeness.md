@@ -19,9 +19,17 @@ Both matter. A perfectly isolated system nobody wants is still a hobby.
 
 ## 1. The completeness verdict
 
-The **planning core** — sprints, goals, tasks, effort, overload, roadmap, capacity — is a real product that solved a real problem in its single-tenant life. That is a genuine head start: most SaaS attempts start with billing and never reach a useful core.
+**The delivery model changed, and it changes this document.** PlannerPro is a tool Architect4Hire's
+clients log into as part of an engagement — not a public SaaS a stranger discovers, signs up for, and
+pays with a card. Tenants are provisioned by a platform admin (Prompt 14). There is no self-serve
+signup, and there is deliberately no checkout.
 
-What's missing is everything between "a good internal tool" and "a thing a stranger can sign up for, understand, and pay for." The SCRUB prompt library builds much of that (signup, invitations, branding, limits), but several capabilities a buyer would assume exist are not in scope anywhere yet.
+That deletes the two gaps this document used to lead with, and promotes one that was third.
+
+The **planning core** — sprints, goals, tasks, effort, overload, roadmap, capacity — is a real product
+that solved a real problem in its single-tenant life. The question is no longer "would a stranger buy
+this?" It is **"can a client be onboarded and get value in their first week without you sitting next
+to them?"** Everything below is scored against that.
 
 ### Completeness scorecard (product, not engineering)
 
@@ -31,29 +39,53 @@ What's missing is everything between "a good internal tool" and "a thing a stran
 | Program roadmap | 🟢 Designed | Roadmap |
 | Capacity planning | 🟢 Designed | Planning |
 | Client → project hierarchy | 🟢 Designed | Portfolio |
-| Self-serve signup | 🟡 In prompts (13) | Access |
-| Invitations & team management | 🟡 In prompts (13) | Access |
-| White-label branding | 🟡 In prompts (14) | Access + Files |
-| Plans, limits, trial lifecycle | 🟡 In prompts (10) | Billing |
-| Platform admin console | 🟡 In prompts (16) | — |
-| **Taking money** | 🔴 Modelled, not wired | Billing |
-| **Email delivery** | 🔴 Stubbed | Notifications |
+| Client provisioning (admin) | 🟡 In prompts (14) | Access |
+| Invitations & team management | 🟡 In prompts (14) | Access |
+| White-label branding | 🟡 In prompts (15) | Access + Files |
+| Plans, limits, lifecycle | 🟡 In prompts (10) | Billing |
+| Public front door & login handoff | 🟡 In prompts (11–12, 16–18) | Web + Gateway |
+| Deployment | 🟡 In prompts (20) | — |
+| Platform admin console | 🟡 In prompts (22) | — |
 | **Onboarding / empty states** | 🔴 Not scoped | Web |
+| **Password reset** | 🔴 Not scoped | Access |
 | **Reporting & export** | 🔴 Barely scoped | Planning |
 | **Search / filtering at scale** | 🔴 Not scoped | Planning, Portfolio |
-| **Notification preferences** | 🔴 Not scoped | Notifications |
 | **Mobile / responsive** | 🔴 Not scoped | Web |
+| **Email delivery** | 🟠 Stubbed — now a convenience, not a blocker | Notifications |
+| **Notification preferences** | 🟠 Not scoped — blocked behind email | Notifications |
+| **Taking money** | ⚪ Out of scope — invoiced through the engagement | Billing |
+| **Self-serve signup** | ⚪ Deliberately out of scope | — |
 | **Integrations** | ⚪ Explicitly out of scope | — |
 
 ---
 
-## 2. The three that block revenue
+## 2. What the client-tool model deleted — and what it promoted
 
-**2.1 Nobody can pay 🔴 — the headline gap.** ADR-0018 models plans, limits and lifecycle but wires no provider. Every enforcement point exists; the checkout does not. Until it does, there is no revenue and the trial lifecycle terminates in a manual conversation. *The work is a webhook that writes `Tenant.Status` and three reserved columns — deliberately small by design, but it is not zero and it is not started.*
+**Deleted: taking money ⚪.** ADR-0018's plan model, limits and lifecycle all still matter — they
+constrain what a client can do. But the checkout does not exist and does not need to. You invoice
+through the consulting relationship. The three reserved Stripe columns stay null exactly as designed,
+and adding checkout later remains a webhook rather than a refactor.
 
-**2.2 No email 🔴.** Invitations are the primary growth loop: an owner signs up, invites four colleagues, and the product spreads. With `IInvitationNotifier` logging to the console, that loop is broken outside development. Trial-expiry and payment-failure notices have the same problem. *Owner: Notifications. Blocking for Phase 3 onward.*
+**Deleted: self-serve signup ⚪.** Prompt 14 provisions tenants from the platform-admin surface. No
+public `/api/signup`, no slug-availability endpoint, no anonymous trial provisioning. This is a real
+scope reduction, not a deferral — and it is the reason Prompt 14 is smaller than the prompt it
+replaced.
 
-**2.3 Nothing happens after signup 🔴.** A new tenant lands on an empty board with three sample rows and no idea what to do. Onboarding — a first-run checklist, meaningful empty states, a sample sprint that demonstrates the overload warning — is the difference between a trial that converts and one that bounces on day one. *Not scoped anywhere. Owner: Web + Access.*
+**Downgraded: email 🟠.** It was the growth loop; now it is a convenience. You onboard a client's
+owner in a call. Invitations still want it — an owner adding four colleagues shouldn't require you —
+but `IInvitationNotifier` logging a link in development is survivable for the first few clients in a
+way it never would be for public signup.
+
+**Promoted: onboarding 🔴 — now the headline gap.** A newly provisioned client's owner logs in and
+lands on a board with sample rows and no idea what to do. Under the old model that was a bounced
+trial. Under this one it is *you* on a call walking them through it, every time, for every new client
+— which is the cost that compounds fastest as you add clients. A first-run checklist, meaningful empty
+states, and a sample sprint that visibly trips the overload warning would repay themselves on the
+second client.
+
+**Promoted: password reset 🔴.** Nowhere in scope. Under public signup this was table stakes. Under
+this model it is worse: every forgotten password is a support request routed to *you personally*,
+because there is nobody else to route it to.
 
 ---
 
@@ -93,19 +125,27 @@ Propose, don't scaffold. Each of these would change the shape of the system:
 | **Real-time collaboration** | Websockets through a gateway designed for request/response |
 | **Per-tenant data residency** | Would likely force ADR-0008 toward database-per-tenant |
 | **Usage-based pricing** | ADR-0018 assumes a seat/limit-shaped world |
+| **Self-serve signup + checkout** | Reverses the client-tool delivery model; reinstates the public `/api/signup` surface Prompt 14 deliberately omits |
 
 ---
 
 ## 6. Suggested build order (product value ÷ effort)
 
-**Tier 1 — makes it sellable.** Email delivery · payment checkout · onboarding and empty states · password reset.
-*Rationale: without these there is no growth loop, no revenue, and no first-week retention. Everything else is polish on a product nobody completed signup for.*
+**Tier 1 — makes a client self-sufficient.** Onboarding and empty states · password reset · email
+delivery for invitations.
+*Rationale: these are the three things that determine whether onboarding client number four costs you
+a phone call. Nothing here is architecturally interesting, all of it is required, and it is the work
+most likely to be deferred in favour of another well-drawn diagram.*
 
-**Tier 2 — makes it retainable.** Reporting and export for client-facing work · search and filtering · notification preferences · email verification.
+**Tier 2 — makes the tool worth keeping.** Reporting and export so an agency can show *their* client
+what was delivered · search and filtering once a tenant passes ~20 projects · email verification.
 
-**Tier 3 — makes it competitive.** Task detail depth (if decided) · saved views · mobile-responsive layouts · richer capacity analytics.
+**Tier 3 — makes it competitive.** Task detail depth (if decided) · saved views · mobile-responsive
+layouts · richer capacity analytics.
 
-**Tier 4 — makes it enterprise.** SSO · custom domains · public API · audit export for compliance.
+**Tier 4 — only if the model changes.** Self-serve signup · payment checkout · SSO · custom domains ·
+public API. Each of these is a *business model* decision before it is a feature, and each needs an
+ADR — see §5.
 
 ---
 
@@ -117,4 +157,4 @@ Propose, don't scaffold. Each of these would change the shape of the system:
 
 ### Bottom line
 
-The planning core is good and the SaaS scaffolding is designed. What stands between this and a business is unglamorous: email, payment, onboarding, and password reset. None of it is architecturally interesting, all of it is required, and it is the work most likely to be deferred in favour of another well-drawn diagram.
+The planning core is good and the scaffolding is designed. As a **client tool**, the distance to useful is much shorter than it was as a public SaaS — payment and self-serve signup are gone, and email is a convenience. What remains is unglamorous and unavoidable: **onboarding, password reset, and reporting a client can hand to their own client.** That is three pieces of work, none of them architecturally interesting, all of them the difference between a tool your clients use and a tool you demo.

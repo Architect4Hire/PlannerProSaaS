@@ -10,18 +10,18 @@
 
 ## Why this slice
 
-Provisioning a tenant is the smallest request that touches everything: an anonymous endpoint, a multi-entity transaction, an outbox write, the dispatcher, the bus, envelope-derived tenant scope, an idempotent consumer in another service, and the audit trail. If this works, the spine works.
+Provisioning a tenant is the smallest request that touches everything: a platform-admin endpoint, a multi-entity transaction, an outbox write, the dispatcher, the bus, envelope-derived tenant scope, an idempotent consumer in another service, and the audit trail. If this works, the spine works.
 
 ## The path
 
 ```
-Browser  POST /api/signup
+Browser  POST /api/admin/tenants        (platform admin — tenants are provisioned, not signed up for)
    │
    ▼
-Gateway ──────────────── anonymous route, NO tenant resolution (the tenant doesn't exist yet)
+Gateway ──────────────── platform route, NO tenant resolution (the tenant doesn't exist yet)
    │                     mints CorrelationId, strips any client-supplied copy
    ▼
-Access · SignupController ──── binds SignupViewModel, calls the facade
+Access · TenantAdminController ── binds ProvisionTenantViewModel, calls the facade
    │
    ▼
 Access · TenantFacade ──────── validates: slug regex, reserved-word list, email uniqueness
@@ -36,8 +36,9 @@ Access · TenantDataLayer ───── ExecuteInTransactionAsync:
    │                             └─ IOutbox.Enqueue(TenantProvisioned)
    │                           ONE transaction — all of it, or none of it
    ▼
-201 Created + session cookie ──────────────────────────────────▶ Browser
-                                                                 (redirects to /t/{slug}/board)
+201 Created + an invitation for the client's owner ─────────────▶ Browser
+                                                                 (admin console; the owner arrives
+                                                                  later at /app/t/{slug}/board)
 ```
 
 **Note what does *not* happen here:** nothing is sent to the bus, and no other service is called. The response returns as soon as the transaction commits. Everything downstream is asynchronous.
@@ -76,18 +77,19 @@ portfoliodb                     auditdb                        billingdb
 
 | What fails | What happens |
 | --- | --- |
-| Validation (bad slug, taken email) | 400 before anything is written |
+| Validation (bad slug, reserved slug, taken email) | 400 before anything is written |
 | A mid-transaction error in Access | Nothing commits — no tenant, **no outbox row**. The signup simply failed |
 | Dispatcher crashes after send, before stamp | The row resends with the same `MessageId`; every consumer's inbox no-ops |
 | Portfolio's consumer throws | The message isn't completed; it redelivers. The tenant exists with no default client until it succeeds |
 | Portfolio is down entirely | Signup still succeeds. The client appears when Portfolio recovers |
 | The event has no `TenantId` | **Dead-lettered.** Not processed under a guessed scope (ADR-0009) |
 
-That fifth row is the point of the whole architecture: a customer can sign up while Portfolio, Billing, Audit and Notifications are all down.
+That fifth row is the point of the whole architecture: a client can be provisioned while Portfolio, Billing, Audit and Notifications are all down.
 
 ## What to verify when you build it
 
-1. Provision **two** tenants. Each gets exactly one "Internal" client.
+1. Provision **two** tenants from the admin surface. Each gets exactly one "Internal" client.
 2. Redeliver a message manually. Confirm the consumer no-ops and no duplicate client appears.
 3. Query the board as tenant B using tenant A's ids. Confirm 404 — same shape as a nonexistent id.
-4. Trace the whole fan-out by `CorrelationId` in the audit trail, and confirm the `CausationId` tree has `ClientCreated` hanging off `TenantProvisioned` rather than everything flat under the root.
+4. Confirm no anonymous `/api/signup` route exists; provisioning is platform-admin only.
+5. Trace the whole fan-out by `CorrelationId` in the audit trail, and confirm the `CausationId` tree has `ClientCreated` hanging off `TenantProvisioned` rather than everything flat under the root.

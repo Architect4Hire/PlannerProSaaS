@@ -18,6 +18,11 @@ PlannerPro is a **multi-tenant, white-label SaaS** for planning and tracking two
 
 Custom domains and per-domain TLS · SSO/SAML/OIDC · live Stripe checkout and webhooks · per-tenant data residency · a public API with tenant API keys · third-party integrations (Slack, Jira) · a mobile app · real-time collaboration.
 
+**Also out of scope by delivery model:** self-serve signup. PlannerPro is a tool Architect4Hire's
+clients log into as part of an engagement. Tenants are provisioned by a platform admin; there is no
+public `/api/signup`, no anonymous trial, and no checkout. Plans and limits still exist and still
+constrain a tenant — they are just enforced against an invoiced relationship rather than a card.
+
 ### 1.3 Stakeholders & primary use cases
 
 | Actor | Primary use |
@@ -146,6 +151,28 @@ flowchart TB
     style PP fill:#ffffff,stroke:#2e6295,stroke-width:2px,stroke-dasharray:6 4,color:#333333
 ```
 
+### 4.0 The public front door
+
+Everything the browser touches sits on **one hostname**, in three non-overlapping namespaces:
+
+| Path | Serves | Owned by |
+| --- | --- | --- |
+| `/`, `/privacy`, `/terms` | static landing content | static files |
+| `/app`, `/app/login`, `/app/tenants`, `/app/t/{slug}/…` | the Angular SPA | SPA shell |
+| `/api/**` | everything else | gateway |
+
+Route precedence is ordered and `/api` wins: **`/api/**` → `/app/**` → static → 404.** The SPA
+fallback is scoped to `/app/**` only; an over-broad fallback that shadows `/api` is the failure mode
+here, and it presents as the gateway being down.
+
+Single origin throughout is what preserves ADR-0007's `SameSite=Strict` cookie plus antiforgery with
+no CORS. `/app` is a resolver, not a redirect — it boots the shell, checks the session, then routes to
+login, the tenant switcher, or the single tenant's board. Never a 301: browsers cache permanent
+redirects, and a user who joins a second client or is offboarded gets pinned to a tenant they cannot
+reach.
+
+The `/app` namespace is an amendment to ADR-0007's documented route shape, recorded by Prompt 11.
+
 ### 4.1 The eight bounded contexts
 
 | Service | Owns | Publishes | Consumes |
@@ -259,12 +286,12 @@ Plus the cross-tenant test suite and a reflection test asserting every `ITenantS
 
 ## 7. Key runtime flows
 
-### 7.1 Tenant provisioning (write + outbox + async fan-out)
+### 7.1 Tenant provisioning (admin-initiated write + outbox + async fan-out)
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor U as New customer
+    actor U as Platform admin
     participant SPA as Angular SPA
     participant GW as Gateway
     participant AC as Access · Controller→Facade→Business
@@ -276,8 +303,8 @@ sequenceDiagram
     participant PO as Portfolio · Consumer
     participant AU as Audit · Consumer
 
-    U->>SPA: Sign up (org, slug, email, password)
-    SPA->>GW: POST /api/signup (anonymous — no tenant segment)
+    U->>SPA: Provision client (org, slug, owner email)
+    SPA->>GW: POST /api/admin/tenants (platform admin — no tenant segment)
     GW->>AC: forward
     AC->>AC: validate slug (regex + reserved list)
     rect rgb(230,244,255)
@@ -285,7 +312,7 @@ sequenceDiagram
     DA->>DA: insert tenant + settings + branding + owner membership
     DA->>OB: enqueue TenantProvisioned (IOutbox)
     end
-    AC-->>SPA: 201 + session cookie
+    AC-->>SPA: 201 + invitation for the client's owner
     Note over DI,SB: asynchronous, after commit
     DI->>OB: poll unprocessed
     DI->>SB: send (MessageId = row id, TenantId as app property)
@@ -348,7 +375,12 @@ sequenceDiagram
 
 Development is local-first: `aspire run` starts Postgres (eight databases), the Service Bus emulator, Azurite, Redis, eight service hosts, the gateway, and the Angular dev server.
 
-**There is no production deployment story yet, and this is a real gap.** Two requirements follow from decisions already made and must be met before this could run anywhere real:
+Production deployment is **scoped but not done** — Prompt 20 deploys the front door (landing page and
+app shell) to `plannerpro.architect4hire.com`, which is this project's first deployment of anything.
+The services behind it are not covered by that prompt.
+
+Two requirements follow from decisions already made and must be met before this could run anywhere
+real:
 
 1. **Services must be unreachable except through the gateway.** Every service trusts projected headers (ADR-0011, ADR-0021). Without network-level enforcement, tenant isolation is bypassable by anything that can reach a service directly. This is the top-ranked risk in [Build Plan & Risks](./build-plan-and-risks.md).
 2. **Emulator-versus-real-broker behaviour must be verified** — dead-lettering, retry, and throughput differ (ADR-0012).
@@ -383,9 +415,12 @@ Development is local-first: `aspire run` starts Postgres (eight databases), the 
 | No read-model reconciliation for missed events | 🟠 High | ADR-0014 |
 | Outbox / inbox / audit tables grow unbounded | 🟠 High | ADR-0003, ADR-0004, ADR-0016 |
 | Membership cache TTL is a revocation exposure window | 🟠 High | ADR-0011 |
-| No deployment story | 🟠 High | ADR-0012 |
+| Deployment: front door scoped, services not | 🟠 High | ADR-0012, Prompt 20 |
+| Onboarding — a provisioned client's first login lands on an empty board | 🟠 High | product-completeness §2 |
+| Password reset not scoped — every reset is a support request | 🟠 High | product-completeness §2 |
 | Quota overshoot window unsized | 🟡 Medium | ADR-0017 |
-| Email provider stubbed | 🟡 Medium | Prompt 14 |
+| Email provider stubbed (a convenience now, not a blocker) | 🟡 Medium | Prompt 14 |
+| SPA fallback could shadow `/api` if route order regresses | 🟡 Medium | Prompt 18 |
 
 ---
 
