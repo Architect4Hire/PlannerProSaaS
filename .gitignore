@@ -1,0 +1,44 @@
+## Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+TestResults/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## .NET / Rider / VS
+.vs/
+.idea/
+*.swp
+*.DS_Store
+
+## Node / Angular
+node_modules/
+dist/
+.angular/
+npm-debug.log*
+yarn-error.log*
+
+## Aspire / local orchestration
+.aspire/
+*.local.json
+
+## Claude Code — personal overrides stay local
+.claude/settings.local.json
+.claude/**/*.local.*
+
+## Secrets — never commit. Use user-secrets in dev, env vars in production.
+*.pfx
+*.key
+*.pem
+appsettings.*.local.json
+.env
+.env.*

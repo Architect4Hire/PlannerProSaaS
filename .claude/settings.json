@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build *)",
+      "Bash(dotnet restore)",
+      "Bash(dotnet test *)",
+      "Bash(dotnet ef *)",
+      "Bash(dotnet format *)",
+      "Bash(aspire run *)",
+      "Bash(aspire add *)",
+      "Bash(npm ci)",
+      "Bash(npm install *)",
+      "Bash(npx ng generate *)",
+      "Bash(npx ng build *)",
+      "Bash(npx ng test *)",
+      "Bash(git diff *)",
+      "Bash(git status)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": ".claude/hooks/secret-guard.sh" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": ".claude/hooks/format.sh" },
+          { "type": "command", "command": ".claude/hooks/tenancy-guard.sh" }
+        ]
+      }
+    ]
+  }
+}

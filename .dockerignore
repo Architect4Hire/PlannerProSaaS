@@ -1,0 +1,13 @@
+# Repo-root .dockerignore — applies to the API build (context = repo root).
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/.angular
+**/.vs
+**/.vscode
+.git
+.gitignore
+**/*.user
+k8s
+*.md
