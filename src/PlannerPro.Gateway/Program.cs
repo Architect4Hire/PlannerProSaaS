@@ -1,3 +1,5 @@
+using Azure.Storage.Blobs;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using PlannerPro.Gateway.Authentication;
@@ -5,12 +7,25 @@ using PlannerPro.Gateway.Http;
 using PlannerPro.Gateway.Middleware;
 using PlannerPro.Gateway.Tenancy;
 using PlannerPro.Shared;
+using PlannerPro.Shared.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
 builder.Services.AddSharedExceptionHandler();
+
+// The "blobs" connection name is the Aspire blob-SERVICE-level resource (storage.AddBlobs("blobs")
+// in the AppHost). This gateway validates the auth cookie PlannerPro.Access issues on login
+// (ADR-0021); both must decrypt against the same Data Protection key ring, hence the shared blob
+// container instead of each process's own (ephemeral, per-instance) default key store.
+builder.AddAzureBlobServiceClient("blobs");
+builder.Services.AddDataProtection()
+    .SetApplicationName(AuthCookieScheme.DataProtectionApplicationName)
+    .PersistKeysToAzureBlobStorage(sp =>
+        sp.GetRequiredService<BlobServiceClient>()
+            .GetBlobContainerClient("dataprotection-keys")
+            .GetBlobClient("keys.xml"));
 
 builder.Services.AddGatewayCookieAuthentication(builder.Environment);
 builder.Services.AddAuthorization(options =>

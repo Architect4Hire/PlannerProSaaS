@@ -37,26 +37,38 @@ public static class SharedServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Registers <see cref="ITenantContext"/> (scoped, populated per request by
-    /// <see cref="TenantContextMiddleware"/>) and <see cref="TenantSaveChangesInterceptor"/>.
-    /// This does NOT register the middleware itself — call
-    /// <c>app.UseMiddleware&lt;TenantContextMiddleware&gt;()</c> early in each host's pipeline — and
-    /// does NOT wire the interceptor into any <see cref="Microsoft.EntityFrameworkCore.DbContextOptions"/>;
-    /// EF Core does not auto-discover DI-registered interceptors, so each service's own DbContext
-    /// registration must do it explicitly:
-    /// <code>
-    /// services.AddDbContext&lt;PlanningDbContext&gt;((sp, options) =&gt;
-    ///     options.UseSqlServer(...).AddInterceptors(sp.GetRequiredService&lt;TenantSaveChangesInterceptor&gt;()));
-    /// </code>
-    /// Use <c>AddDbContext</c>, not <c>AddDbContextPool</c> — the tenant query filter depends on a
-    /// fresh context instance per DI scope; see the remarks on <see
-    /// cref="Persistence.SharedDbContext.OnModelCreating"/>.
+    /// Registers <see cref="ITenantContext"/>, scoped, populated per request by
+    /// <see cref="TenantContextMiddleware"/>. This does NOT register the middleware itself — call
+    /// <c>app.UseMiddleware&lt;TenantContextMiddleware&gt;()</c> early in each host's pipeline, and
+    /// BEFORE <c>app.UseAuthorization()</c> if any authorization policy will ever read
+    /// <see cref="ITenantContext"/> (a role-based policy resolves during <c>UseAuthorization</c>, so
+    /// tenant headers must already be parsed by then).
     /// </summary>
+    /// <remarks>
+    /// Does NOT register <see cref="TenantSaveChangesInterceptor"/> — <see
+    /// cref="Persistence.SharedDbContext"/> wires it itself, per-instance, from its own already-injected
+    /// <see cref="ITenantContext"/> (see the remarks on <see cref="Persistence.SharedDbContext.OnConfiguring"/>).
+    /// This is what lets every service register its DbContext with nothing more than:
+    /// <code>
+    /// builder.Services.AddSharedTenancy();
+    /// builder.Services.AddDbContext&lt;PlanningDbContext&gt;(options =&gt;
+    ///     options.UseSqlServer(builder.Configuration.GetConnectionString("planningdb")));
+    /// </code>
+    /// The connection string is still Aspire-injected via <c>WithReference</c> on the AppHost side, not
+    /// hardcoded — reading it from configuration is not the same thing as inventing it.
+    /// <b>Deliberately plain <c>AddDbContext</c>, not the <c>Aspire.Microsoft.EntityFrameworkCore.SqlServer</c>
+    /// package's <c>AddSqlServerDbContext&lt;TContext&gt;(...)</c>:</b> that integration pools DbContext
+    /// instances unconditionally with no supported opt-out (confirmed against <c>dotnet/aspire</c>
+    /// issue #7023, closed "not planned"), and pooling is flatly incompatible with this mechanism — a
+    /// pooled context is built once against the ROOT provider and reused across scopes, so it can never
+    /// see the per-request scoped <see cref="ITenantContext"/> the query filter and interceptor both
+    /// depend on. Never <c>AddDbContextPool</c> or any pooled variant, Aspire's or otherwise; see the
+    /// remarks on <see cref="Persistence.SharedDbContext.OnModelCreating"/>.
+    /// </remarks>
     public static IServiceCollection AddSharedTenancy(this IServiceCollection services)
     {
         services.TryAddScoped<TenantContext>();
         services.TryAddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
-        services.TryAddScoped<TenantSaveChangesInterceptor>();
         return services;
     }
 }

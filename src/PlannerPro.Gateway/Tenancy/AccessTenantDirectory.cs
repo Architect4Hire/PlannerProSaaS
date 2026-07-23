@@ -8,11 +8,11 @@ namespace PlannerPro.Gateway.Tenancy;
 /// <c>AddServiceDefaults()</c>'s <c>ConfigureHttpClientDefaults</c> for discovery + resilience).
 /// </summary>
 /// <remarks>
-/// <b>Access does not exist yet</b> (it ships in the next prompt in this project's scaffolding
-/// sequence) and isn't registered as an Aspire resource, so these calls fail today — that is expected,
-/// not a defect in this type. The endpoints below (<c>GET /internal/tenants/by-slug/{slug}</c>,
-/// <c>GET /internal/tenants/{tenantId}/memberships/{actorId}</c>) are this gateway's expectation of
-/// the contract Access will need to expose; they are not yet implemented on the other side.
+/// The endpoints below (<c>GET /internal/tenants/by-slug/{slug}</c>,
+/// <c>GET /internal/tenants/{tenantId}/memberships/{actorId}</c>) are backed by
+/// <c>PlannerPro.Access</c>'s <c>InternalTenantResolutionController</c> — internal-only, not proxied by
+/// any client-facing YARP route, trusted purely by network reachability (see that controller's own
+/// remarks for the accepted risk this implies until network-level gateway-only enforcement exists).
 /// </remarks>
 public sealed class AccessTenantDirectory(HttpClient httpClient) : ITenantDirectory
 {

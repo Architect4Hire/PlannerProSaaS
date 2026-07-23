@@ -1,10 +1,13 @@
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PlannerPro.Shared.Tenancy;
 
 namespace PlannerPro.Shared.Persistence;
 
-public abstract class SharedDbContext(DbContextOptions options, ITenantContext tenant) : DbContext(options)
+public abstract class SharedDbContext(
+    DbContextOptions options, ITenantContext tenant, ILogger<TenantSaveChangesInterceptor>? logger = null)
+    : DbContext(options)
 {
     /// <summary>
     /// The current tenant scope, read fresh at query-execution time by the filters this context
@@ -14,6 +17,23 @@ public abstract class SharedDbContext(DbContextOptions options, ITenantContext t
 
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
+
+    /// <summary>
+    /// Wires <see cref="TenantSaveChangesInterceptor"/> from THIS instance's own already-injected
+    /// <see cref="Tenant"/> (and <paramref name="logger"/>, captured at construction), rather than
+    /// resolving the interceptor from DI in each service's DbContext registration. Because a
+    /// DbContext's own constructor parameters (beyond <see cref="DbContextOptions"/> itself) ARE
+    /// resolved from DI when EF Core activates it, <see cref="Tenant"/> and <paramref name="logger"/>
+    /// already arrive correctly scoped — this just reuses them instead of resolving the interceptor a
+    /// second way. A derived context does not need to override this or add the interceptor itself; a
+    /// service's own DbContext registration (<c>services.AddDbContext&lt;XDbContext&gt;(options =&gt;
+    /// options.UseSqlServer(...))</c>) needs nothing beyond the connection.
+    /// </summary>
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        optionsBuilder.AddInterceptors(new TenantSaveChangesInterceptor(Tenant, logger));
+        base.OnConfiguring(optionsBuilder);
+    }
 
     /// <summary>
     /// Applies <see cref="OutboxMessageConfiguration"/>/<see cref="InboxMessageConfiguration"/> and,

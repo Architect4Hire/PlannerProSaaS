@@ -13,6 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\PlannerPro.Access\PlannerPro.Access.csproj" />
     <ProjectReference Include="..\PlannerPro.Gateway\PlannerPro.Gateway.csproj" />
   </ItemGroup>
 

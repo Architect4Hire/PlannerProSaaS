@@ -24,9 +24,10 @@ internal sealed class SqliteTestDbContextFactory : IDisposable
     {
         var tenantContext = tenant ?? StaticTenantContext.Bypass;
 
+        // No .AddInterceptors(...) here — SharedDbContext.OnConfiguring wires
+        // TenantSaveChangesInterceptor itself from the tenantContext passed to the constructor below.
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite(_connection)
-            .AddInterceptors(new TenantSaveChangesInterceptor(tenantContext))
             .Options;
 
         var context = new TestDbContext(options, tenantContext);
@@ -52,7 +53,6 @@ internal sealed class SqliteTestDbContextFactory : IDisposable
             var tenant = sp.GetRequiredService<ITenantContext>();
             var options = new DbContextOptionsBuilder<TestDbContext>()
                 .UseSqlite(_connection)
-                .AddInterceptors(new TenantSaveChangesInterceptor(tenant))
                 .Options;
             var context = new TestDbContext(options, tenant);
             context.Database.EnsureCreated();

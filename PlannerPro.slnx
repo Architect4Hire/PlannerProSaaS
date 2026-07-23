@@ -1,5 +1,8 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/PlannerPro.Access/PlannerPro.Access.csproj" />
+    <Project Path="src/PlannerPro.Access.Core/PlannerPro.Access.Core.csproj" />
+    <Project Path="src/PlannerPro.Access.Tests/PlannerPro.Access.Tests.csproj" />
     <Project Path="src/PlannerPro.AppHost/PlannerPro.AppHost.csproj" />
     <Project Path="src/PlannerPro.Contracts/PlannerPro.Contracts.csproj" />
     <Project Path="src/PlannerPro.Gateway/PlannerPro.Gateway.csproj" />
