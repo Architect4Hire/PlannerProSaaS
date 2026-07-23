@@ -59,9 +59,9 @@ What's missing is everything between "a good internal tool" and "a thing a stran
 
 ## 3. Close the product loop
 
-**3.1 Reporting and export.** Owners of agencies need to show clients what was delivered. A sprint summary, a per-client effort report, and CSV/PDF export are table stakes for the agency model the product is sold on. Currently: tenant JSON export exists in Prompt 16 as an *operational* feature, not a product one. Those are different things.
+**3.1 Reporting and export.** Owners of agencies need to show clients what was delivered. A sprint summary, a per-client effort report, and CSV/PDF export are table stakes for the agency model the product is sold on. Currently: tenant JSON export exists in Prompt 22 as an *operational* feature, not a product one. Those are different things.
 
-**3.2 Search and filtering at scale.** The board and timeline assume a handful of projects. A tenant with forty projects across twelve clients needs filtering, saved views, and search. The client filter in Prompt 12 is a start, not an answer.
+**3.2 Search and filtering at scale.** The board and timeline assume a handful of projects. A tenant with forty projects across twelve clients needs filtering, saved views, and search. The client filter in Prompt 13 is a start, not an answer.
 
 **3.3 Notification preferences.** Once email works, users will want to control it. A notification service with no preference model generates unsubscribes, not engagement.
 

@@ -10,4 +10,5 @@ How to *do things* in PlannerPro, as opposed to why it's shaped the way it is (t
 | [Adding Seed Data](./adding-seed-data.md) | You need development data across several tenants, and need to know why seeding is the one place filters are legitimately bypassed. |
 | [Tracing a Slice: Tenant Provisioning](./tracing-a-slice-tenant-provisioning.md) | You're new and want to see one request cross every layer, every service, and the bus. **Read this first.** |
 | [Tracing the Outbox: `ProjectCreated`](./tracing-the-outbox-project-created.md) | You want one event followed from the business layer that builds it to the consumers that react. |
+| [Working with AI Assistants](./working-with-ai-assistants.md) | You're setting up Claude Code or Copilot, adding a rule/skill/agent, or wondering which layer actually enforces anything. |
 | [Pattern Deep Dives](./patterns/README.md) | You're changing a mechanism rather than using one. |

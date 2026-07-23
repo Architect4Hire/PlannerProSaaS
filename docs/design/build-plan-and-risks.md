@@ -1,6 +1,6 @@
 # PlannerPro — Build Plan & Risk Register
 
-*The analogue of JobBoard's "Ongoing Architecture Plan," adjusted for the fact that **`src/` does not exist yet**. JobBoard's review scores a running spike; this one scores a plan and sequences the work that turns it into one. Re-score this document once Prompt 15 (end-to-end verification) has run.*
+*The analogue of JobBoard's "Ongoing Architecture Plan," adjusted for the fact that **`src/` does not exist yet**. JobBoard's review scores a running spike; this one scores a plan and sequences the work that turns it into one. Re-score this document once Prompt 19 (end-to-end verification) has run.*
 
 ---
 
@@ -64,9 +64,12 @@ The prompt library's order is the plan. Its shape is deliberate:
 | Core product | 7 | Planning — the thing the product is for |
 | **Isolation gate** | **8** | The fan-out is blocked behind a green cross-tenant suite |
 | Fan-out | 9–10 | One service at a time, suite re-run after each |
-| Client | 11–14 | Shell, screens, onboarding, white-label |
-| Verify | 15 | Honest end-to-end inventory before any repair |
-| Operate | 16 | Platform surface, rate limits, export |
+| **Front-door gate** | **11** | The `/app` topology ADR, before the shell implements route shape |
+| Client | 12–15 | Shell, screens, client provisioning, white-label |
+| Public front door | 16–18 | Landing copy, static page, three-namespace routing |
+| Verify | 19 | Honest end-to-end inventory before any repair |
+| Deploy | 20–21 | First deployment, plus the legal minimum |
+| Operate | 22 | Platform surface, rate limits, export |
 
 **The gate at Prompt 8 is the most important structural choice in the plan.** A leak found after the fan-out has been copied into six more services; found before, it is one fix in `Shared`.
 
@@ -104,7 +107,7 @@ Prompts are not complete because code compiles. Each phase has an acceptance con
 - **Prompt 6:** two tenants provisioned for real via `aspire run`; each has its own client; a redelivery is a no-op; tenant A's client is invisible from B.
 - **Prompt 8:** the cross-tenant suite is green, and the reflection test actually enumerates types rather than passing vacuously.
 - **Prompts 9–10:** the suite is re-run and green **after each service**, not once at the end.
-- **Prompt 15:** an honest inventory — what was exercised, what passed, what failed, what could not be verified and why. Failures ranked with isolation first regardless of apparent size.
+- **Prompt 19:** an honest inventory — what was exercised, what passed, what failed, what could not be verified and why. Failures ranked with isolation first regardless of apparent size.
 
 ---
 

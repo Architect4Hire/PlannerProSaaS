@@ -385,7 +385,7 @@ Development is local-first: `aspire run` starts Postgres (eight databases), the 
 | Membership cache TTL is a revocation exposure window | 🟠 High | ADR-0011 |
 | No deployment story | 🟠 High | ADR-0012 |
 | Quota overshoot window unsized | 🟡 Medium | ADR-0017 |
-| Email provider stubbed | 🟡 Medium | Prompt 13 |
+| Email provider stubbed | 🟡 Medium | Prompt 14 |
 
 ---
 

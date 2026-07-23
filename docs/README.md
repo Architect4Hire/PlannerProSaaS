@@ -59,19 +59,19 @@ Twenty-one records covering the load-bearing decisions. See the [index and readi
 | [Adding an Endpoint by Hand](./developer/adding-an-endpoint-manually.md) | The full controller → repository slice without Claude Code — including the tenancy story you write down *before* coding. |
 | [Adding Seed Data](./developer/adding-seed-data.md) | Development data across eight databases and several tenants, and why seeding is one of only three legitimate filter bypasses. |
 | [Tracing the Outbox: `ProjectCreated`](./developer/tracing-the-outbox-project-created.md) | One event from the business method that builds it to the four services that react, and the quota loop closing behind it. |
+| [Working with AI Assistants](./developer/working-with-ai-assistants.md) | How Claude Code and GitHub Copilot are both supported: what's shared, what's generated, and what actually enforces anything. |
 | [Pattern Deep Dives](./developer/patterns/README.md) | Sixteen mechanisms — layering, tenant isolation, bus scoping, outbox/inbox, gateway, auth, contracts, audit, limits, white-label, caching, concurrency, Aspire, errors, the frontend seam. |
-| [SCRUB Prompts](./prompts/scrub-prompts.md) | The prompts that stand the system up. *Part 1:* seventeen scaffolding prompts, in order, gated on a cross-tenant isolation suite before the fan-out. *Part 2:* six operational templates. |
-| [Tenancy SCRUB Prompts](./prompts/tenancy-scrub-prompts.md) | Focused prompts for the isolation mechanism itself — proving the two unverified assumptions, adding scoped entities, building the suite, auditing a surface, investigating a suspected leak. |
+| [SCRUB Prompts](./prompts/scrub-prompts.md) | **The single build sequence.** *Part 1:* twenty-three prompts, 0 → 22, in order — services, app, public front door, deployment — with prove-it-first steps inside Prompts 2 and 3 and gates at 8 and 11. *Part 2:* ten operational templates. *Part 3:* the proposed Sprint Advisor, designed but not scheduled. |
 
 ## Where to start
 
 - **New to the project?** [High-Level Design](./design/high-level-design.md), then [Tracing a Slice](./developer/tracing-a-slice-tenant-provisioning.md), then skim the [ADRs](./adr/README.md).
-- **Building it from scratch?** Start a Claude Code session at the repo root and run [SCRUB Prompts](./prompts/scrub-prompts.md), Part 1, Prompt 0 — but read [Prompt T1](./prompts/tenancy-scrub-prompts.md) first; it can save a week.
+- **Building it from scratch?** Start a Claude Code session at the repo root and run [SCRUB Prompts](./prompts/scrub-prompts.md), Part 1, Prompt 0 — Prompt 2 opens with a prove-it-first step that can save a week — don't skip it.
 - **Adding a feature by hand?** [Adding an Endpoint by Hand](./developer/adding-an-endpoint-manually.md).
-- **Working on tenancy?** [Tenant Isolation](./developer/patterns/tenant-isolation-defense-in-depth.md) and [Tenant Scope on the Bus](./developer/patterns/tenant-scope-on-the-bus.md), then [Tenancy SCRUB Prompts](./prompts/tenancy-scrub-prompts.md).
+- **Working on tenancy?** [Tenant Isolation](./developer/patterns/tenant-isolation-defense-in-depth.md) and [Tenant Scope on the Bus](./developer/patterns/tenant-scope-on-the-bus.md), then [SCRUB Prompts](./prompts/scrub-prompts.md).
 - **Reviewing where it stands?** [Build Plan & Risks](./design/build-plan-and-risks.md).
 - **Deciding what to build next?** [Product Completeness](./design/product-completeness.md).
-- **Investigating a suspected leak?** Stop and use [Prompt T6](./prompts/tenancy-scrub-prompts.md), plus `@tenant-isolation-auditor`.
+- **Investigating a suspected leak?** Stop and use [Template J](./prompts/scrub-prompts.md), plus `@tenant-isolation-auditor`.
 
 ## Relationship to the earlier plan
 

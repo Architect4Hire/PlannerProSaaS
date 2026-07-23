@@ -4,10 +4,57 @@ Prompts for driving Claude Code on PlannerPro (Aspire + ASP.NET Core microservic
 
 Two parts:
 
-- **Part 1 — Scaffolding:** a one-time sequence, run in order, to stand the system up. Because this is a *multi-tenant microservice* app, the sequence stands up the shared spine first, then the **tenancy mechanism**, then proves **one** service and the **whole tenant-aware event loop** end to end — and only then fans out.
+- **Part 1 — Scaffolding:** a one-time sequence, run in order, to stand the whole thing up — services, app, public front door, and deployment. Because this is a *multi-tenant microservice* app, the sequence stands up the shared spine first, then the **tenancy mechanism**, then proves **one** service and the **whole tenant-aware event loop** end to end — and only then fans out.
+- **Part 3 — Proposed work:** a candidate AI capability (the Sprint Advisor), **designed but not scheduled**. It runs only after its own ADRs are written and approved. Versioned here with everything else, but it is a proposal, not a plan.
 - **Part 2 — Operational templates:** reusable prompts for the recurring, high-stakes moments the agent won't self-guard (features that cross the bus, migrations, refactors, isolation review, debugging). Fill in the blanks and go.
 
 Once the system is scaffolded, most day-to-day work needs no bespoke prompt — your rules, skills, subagents, and hooks carry the structure. Reach for Part 2 only when a task is non-trivial or risky. When you reuse one two or three times, promote it to a skill so you stop needing the prompt at all.
+
+## The public front door
+
+From Prompt 11 onward the system has a public shape, on **one hostname**, in three non-overlapping
+namespaces:
+
+| Path | Serves | Owned by |
+| --- | --- | --- |
+| `/`, `/privacy`, `/terms` | static landing content | static files |
+| `/app`, `/app/login`, `/app/tenants`, `/app/t/{slug}/…` | the Angular SPA | SPA shell |
+| `/api/**` | everything else | gateway |
+
+Route precedence is ordered, and `/api` wins: **`/api/**` → `/app/**` → static → 404.** Get the first
+two backwards and it looks like the gateway is down.
+
+Same origin throughout, which is what preserves ADR-0007's `SameSite=Strict` cookie plus antiforgery
+with no CORS. Moving the app to another subdomain or domain would break cross-site navigation and
+force CORS — it needs an ADR superseding ADR-0007 and ADR-0021, not a config change.
+
+**This is a client tool, not a self-serve SaaS.** Tenants are provisioned by a platform admin as part
+of an engagement (Prompt 14). There is no public signup, which is why the landing page's CTA is
+"Log in" and why several prompts explicitly forbid building a signup flow.
+
+## Contents
+
+**[Part 1 — Scaffolding](#part-1--scaffolding-run-once-in-order)** — run once, in order, 0 → 22.
+
+| | | | |
+| --- | --- | --- | --- |
+| **0** Solution skeleton | **6** Prove the loop | **12** Angular shell under `/app` | **18** Serve the three namespaces |
+| **1** Shared spine | **7** Planning (product core) | **13** Core UI | **19** End-to-end verification |
+| **2** Tenancy mechanism ⚠ | **8** Isolation suite 🚧 | **14** Client provisioning | **20** Deploy the front door |
+| **3** Service Bus + relay ⚠ | **9** Fan out (4 services) | **15** White-label branding | **21** Legal & analytics minimum |
+| **4** Gateway | **10** Billing + quotas | **16** Landing page copy | **22** Platform operations |
+| **5** Access service | **11** Front-door ADR 🚧 | **17** Static landing page | |
+
+⚠ contains a *prove-it-first* step · 🚧 a gate — do not pass until green
+
+**[Part 2 — Operational templates](#part-2--operational-templates-reuse-anytime)** — reach for these anytime.
+
+**A** Feature slice · **B** Cross-service event · **C** New tenant-scoped entity · **D** Refactor ·
+**E** Isolation review · **F** Debug/harden · **G** Update the landing page · **H** Client-branded entry ·
+**I** Rename the product · **J** Investigate a suspected leak
+
+**[Part 3 — Proposed: Sprint Advisor](#part-3--proposed-sprint-advisor)** — *designed, not scheduled.*
+A0–A8 plus templates **K** and **L**.
 
 ## The reusable SCRUB skeleton
 
@@ -25,7 +72,10 @@ BEHAVIOR:     how to proceed — plan, approve, small steps, test, report
 - Each assumes `CLAUDE.md` (repo root) and `.claude/` — rules (`tenancy.md`, `aspire.md`, `backend.md`, `messaging.md`, `gateway.md`, `billing.md`, `audit.md`, `frontend.md`), skills (`add-endpoint`, `add-tenant-scoped-entity`, `add-component`, `add-aspire-resource`, `add-audit-event`, `trace-a-request`), and subagents (`code-reviewer`, `test-gap-analyzer`, `api-contract-checker`, `tenant-isolation-auditor`) — are already in place.
 - Every prompt asks Claude to **plan first and wait for approval** before editing. Read the plan before you say go; that's the biggest quality lever. In a multi-tenant microservice system it's also where you catch a boundary drawn in the wrong place, or a tenancy story left unstated, before any code exists.
 - Use `/clear` between big steps to keep context lean; rules and skills reload on their own.
+- **Two gates govern the order.** The tenancy mechanism (Prompts 2 and 3) and the isolation suite (Prompt 8) come *before* the fan-out. And the front-door topology ADR (Prompt 11) comes *before* the Angular shell (Prompt 12), because it fixes the route shape the shell implements — deciding it afterwards means rewriting the router tree, both guards, the resolver, and every routerLink.
 - **The golden rule of the sequence:** the tenancy mechanism (Prompts 2 and 3) and the isolation test suite (Prompt 8) come *before* the fan-out. A tenant leak replicated across eight services is eight times the work to fix, and you won't find it by reading code.
+
+---
 
 ---
 
@@ -91,6 +141,38 @@ writing. Wait for approval. Implement with unit tests for IOutbox (writes a row)
 ```
 
 ## Prompt 2 — The tenancy mechanism (PlannerPro.Shared) ← highest-risk step
+
+### Step A — prove the assumption before building on it
+
+*The whole isolation model rests on one EF behaviour nobody has verified. Twenty minutes here
+against a week of rework. **Re-run this on every EF Core upgrade** — nothing will tell you when
+it stops holding.*
+
+```
+SCOPE: Prove — with a test, not an argument — that an EF Core global query filter closing over an
+INJECTED, SCOPED ITenantContext re-evaluates per request rather than capturing the first tenant the
+compiled model ever saw. Build the smallest possible harness: one entity implementing ITenantScoped,
+a base DbContext applying the filter by reflection, a scoped ITenantContext, and a test that resolves
+the context twice for two different tenants and asserts each sees only its own rows.
+
+CONSTRAINT: Test the configuration we will actually run — including DbContext pooling if we intend to
+use it, and the Aspire Npgsql registration. A test that passes without pooling and fails with it has
+told us nothing useful.
+
+RESTRICTION: Do NOT proceed to build anything on this assumption until the test passes. Do NOT make
+the test pass by disabling pooling or the model cache without telling me that's what you did — that
+is a finding, not a fix. Do NOT assume the behaviour from documentation or from memory of another EF
+version.
+
+USAGE: Use plan mode.
+
+BEHAVIOR: First write out, in prose, exactly what you expect: when the filter expression is compiled,
+when it is evaluated, and what the model cache holds. Show me that before writing code — if the
+prediction is wrong, that's the most valuable output of this prompt. Then implement, run, and report
+the actual result. If it fails, STOP and tell me; do not work around it.
+```
+
+### Step B — build the mechanism
 
 ```
 SCOPE: Add the multi-tenancy mechanism to PlannerPro.Shared, once, so every service inherits it:
@@ -158,6 +240,33 @@ author is prevented from bypassing it. Wait for approval. Implement with tests: 
 and stamps and leaves failed sends for retry; a redelivered message is applied once; a consumer
 invoked for tenant B cannot read tenant A's rows; a message with no TenantId is rejected rather than
 silently processed. Run dotnet test, run both subagents, summarize.
+```
+
+### Then prove it, before any consumer depends on it
+
+*Two failure modes here are silent: an unset context makes every consumer a no-op, and a
+defaulted bypass makes every consumer cross-tenant. Neither throws.*
+
+```
+SCOPE: Prove that a Service Bus consumer operates under the tenant carried on the event envelope, and
+that the two silent failure modes are impossible. Build a harness with two tenants, one ITenantScoped
+entity, and a consumer that writes to it. Assert: (1) a message for tenant A causes a write visible
+only to tenant A; (2) a consumer invoked with no established scope CANNOT silently write unstamped or
+cross-tenant rows; (3) a message arriving with no TenantId is dead-lettered, not processed.
+
+CONSTRAINT: Scope establishment must live in the processor host, be unavoidable, and require nothing
+from the consumer author. Follow .claude/rules/messaging.md and .claude/rules/tenancy.md.
+
+RESTRICTION: Do NOT let a consumer resolve its own tenancy from the payload body. Do NOT default
+BypassFilters to true for background work. Do NOT make the "no TenantId" case a warning that then
+processes anyway — dead-letter it.
+
+USAGE: Use plan mode. Delegate review to tenant-isolation-auditor.
+
+BEHAVIOR: Show me the scope-establishment sequence and explain how a consumer author is structurally
+prevented from bypassing it. Wait for approval. Implement, test all three assertions, and report. Say
+explicitly whether failure mode A (silent no-op) would be detectable in production logs — if not,
+propose what would make it detectable.
 ```
 
 ## Prompt 4 — The gateway: the only door, and the only place tenancy is resolved
@@ -373,34 +482,95 @@ enforced; a tenant at its limit gets 402 with the right code; a quota change pro
 double-delivered count event does not double-count. Run dotnet test and both subagents.
 ```
 
-## Prompt 11 — Angular shell: tenant routing, interceptor, tenant context
+## Prompt 11 — Front-door topology: the `/app` namespace ADR
+
+```
+SCOPE: Do not write implementation code. Write the ADR that records how the public front door is
+served, following docs/adr/README.md format. Use the next free number — check docs/adr/ first.
+
+The ADR must record TWO things:
+
+  (1) The landing page is STATIC content served at / on the same origin as the app and the API,
+      because ADR-0007's single-origin cookie + antiforgery model is what is being protected.
+      Evaluate and choose between:
+        (a) the gateway serves static files with fallback to its existing routes
+        (b) a CDN / front door in front of both, routing static to storage and the rest to the gateway
+        (c) the Angular app serves the landing page as its root route
+
+  (2) The app is namespaced under /app — /app/login, /app/tenants, /app/t/{slug}/… — rather than
+      sitting at the root. This is an AMENDMENT to ADR-0007, which documents app routes as
+      /t/{slug}/…. Record it as an amendment, state that ADR-0007's reserved-slug list already
+      contains `app` so there is no collision risk, and state the ordered route precedence:
+      /api/** first, then /app/**, then static, then 404.
+
+CONSTRAINT: The ADR must engage honestly with the fact that ADR-0006 says the gateway is the only
+public door and stays declarative with no business logic. Static file serving is an edge concern, not
+business logic — but it does couple marketing deploys to gateway deploys, and that cost must be
+stated, not waved through. For (2), state the real trade: a longer URL in exchange for a single
+prefix rule instead of an enumerated exception list.
+
+RESTRICTION: Do NOT choose option (c) without stating plainly that it loads the entire SPA bundle to
+render a brochure and makes the client's first impression a spinner. Do NOT propose a separate
+subdomain or domain for the app — that breaks SameSite behaviour on cross-site navigation and forces
+CORS, unwinding three ADRs. If you believe a separate origin is right anyway, say so explicitly and
+write it as superseding ADR-0007 and ADR-0021, not as a footnote. Do NOT record the /app namespace as
+an implementation detail — it changes documented route shape, so it is an amendment.
+
+USAGE: Read ADR-0006, ADR-0007, ADR-0019 and ADR-0021 first.
+
+BEHAVIOR: Draft the ADR and STOP. I want to approve the topology before any page exists, because it
+determines the build target, the deploy pipeline, and whether the marketing site can ship
+independently of the gateway.
+```
+
+## Prompt 12 — Angular shell under `/app`: routing, interceptor, tenant resolver
 
 ```
 SCOPE: Build the Angular 22 shell in src/web: zoneless, signal-first, standalone components, strict
-TS. Nest all authenticated routes under /t/:tenant. Add a TenantContext service exposing slug,
-tenant, role, plan and limits as signals, populated by a resolver on the /t/:tenant parent route. Add
-ONE HTTP interceptor that rewrites /api/x to /api/t/{slug}/x, with an explicit passthrough list
-(/api/auth, /api/public, /api/signup, /api/me, /api/admin, /api/ping). Add authGuard, tenantGuard,
-and a roleGuard(minRole) factory. Add typed services per backend resource, all hitting the gateway.
+TS. Everything the SPA owns lives under /app (ADR from Prompt 11):
 
-CONSTRAINT: Follow .claude/rules/frontend.md. Reads use httpResource; writes patch local signals
-optimistically then reload() to reconcile with the server. Model interfaces mirror each service's
-ServiceModels exactly. The gateway base URL comes from Aspire-injected config.
+    /app                     the shell — boots, then RESOLVES where the user belongs
+    /app/login               login
+    /app/tenants             tenant switcher
+    /app/t/:tenant/...       the app proper
+
+The /app resolver handles four arrival cases:
+    - not authenticated         → /app/login (remembering the intended destination)
+    - authenticated, 0 tenants  → a "request access" view (there is no self-serve signup)
+    - authenticated, 1 tenant   → /app/t/{slug}/board
+    - authenticated, 2+ tenants → /app/tenants
+
+Add a TenantContext service exposing slug, tenant, role, plan and limits as signals, populated by a
+resolver on the /app/t/:tenant parent route. Add ONE HTTP interceptor that rewrites /api/x to
+/api/t/{slug}/x, with an explicit passthrough list (/api/auth, /api/public, /api/me, /api/admin,
+/api/ping). Add authGuard, tenantGuard, and a roleGuard(minRole) factory. Add typed services per
+backend resource, all hitting the gateway.
+
+CONSTRAINT: Follow .claude/rules/frontend.md and ADR-0021. Reads use httpResource; writes patch local
+signals optimistically then reload() to reconcile. Model interfaces mirror each service's
+ServiceModels exactly. The gateway base URL comes from Aspire-injected config. Resolution happens
+CLIENT-SIDE after the shell boots, using GET /api/me/tenants — the server cannot know the destination
+until the cookie is validated and the tenant list is known.
 
 RESTRICTION: Done correctly, NO store or typed service needs a tenant-aware URL — the interceptor is
-the only place the slug appears. Keep it that way; a slug hardcoded in a store is the thing this
-design exists to prevent. No `any`. No zone.js, no NgModules, no NgZone. Do NOT target a service
-directly, only the gateway. Do NOT read the role from anywhere but TenantContext.
+the only place the slug appears. Keep it that way. Do NOT implement /app as a server-side redirect,
+and NEVER a 301 — browsers cache permanent redirects, so a user who logs out, joins a second client,
+or is offboarded gets pinned to a tenant they cannot reach, and the remedy is asking a client to clear
+their cache. Do NOT build a self-serve signup route. Do NOT make an unknown slug and an unauthorized
+slug look different — the client cannot reveal what the gateway deliberately hides. No `any`, no
+zone.js, no NgModules, no NgZone. Do NOT target a service directly, only the gateway. Do NOT read the
+role from anywhere but TenantContext. Do NOT store anything in localStorage.
 
-USAGE: Use the add-component skill. Use plan mode. Delegate review to code-reviewer and
-api-contract-checker.
+USAGE: Use the add-component skill. Use plan mode. Delegate review to code-reviewer,
+api-contract-checker and tenant-isolation-auditor.
 
-BEHAVIOR: Plan the routing tree, the interceptor's rewrite/passthrough logic, and the resolver's
-failure path (unknown slug, non-member -> what does the user see?) before writing. Wait for approval.
-Implement, run `ng test` and `ng build`, run both subagents, and summarize.
+BEHAVIOR: Plan the routing tree, the interceptor's rewrite/passthrough logic, and all four resolver
+cases before writing. Wait for approval. Implement, run `ng test` and `ng build`, then test each
+arrival case by hand — plus a deep link to /app/t/{slug}/board while logged out, which must land on
+login and then return the user to where they were going.
 ```
 
-## Prompt 12 — Core UI: board, timeline, roadmap, capacity
+## Prompt 13 — Core UI: board, timeline, roadmap, capacity
 
 ```
 SCOPE: Build the main screens against the gateway: sprint board (current sprint, project columns,
@@ -425,36 +595,47 @@ Build one screen at a time, running ng test between them. Summarize with a note 
 couldn't verify without real data.
 ```
 
-## Prompt 13 — Onboarding: signup, slug rules, invitations
+## Prompt 14 — Client provisioning and invitations
+
+*Tenants are provisioned as part of a consulting engagement, not by self-serve signup. That deletes a
+phase of work — build the admin path, not the public one.*
 
 ```
-SCOPE: Add self-serve onboarding. POST /api/signup (anonymous): org name, desired slug, email,
-password, display name -> transactionally create tenant (Trialing, 14 days, free plan), settings,
-branding defaults, account, Owner membership, sprint calendar, and a sample client + project; then
-sign the user in. Slug rules: ^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$ plus a reserved list (api, auth,
-admin, app, www, t, signup, login, health, public, assets, static). Expose GET
-/api/public/slug-available. Add invitations: create (Admin+, store only a token HASH, 7-day expiry),
-anonymous preview by token, and accept (join as an existing user, or sign up and join). Add the
-Angular /signup, /invite/:token and /tenants switcher views.
+SCOPE: Build tenant provisioning as a PLATFORM-ADMIN operation plus client-side team invitations.
 
-CONSTRAINT: Follow .claude/rules/tenancy.md. Provisioning is one transaction plus outbox events —
-partial tenant creation is not an acceptable failure mode. Email delivery may be stubbed behind an
-IInvitationNotifier that logs the link in Development; say clearly that production needs a provider.
+  1. POST /api/admin/tenants (IsPlatformAdmin only): org name, slug, owner email, display name →
+     transactionally create tenant (Active, chosen plan), settings, branding defaults, the owner's
+     ApplicationUser if new, an Owner membership, the sprint calendar, and a starter client. Publish
+     TenantProvisioned through the outbox in the same transaction.
+  2. Slug rules: ^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$ plus a reserved list (api, auth, admin, app, www,
+     t, signup, login, health, public, assets, static). Validate on the admin path.
+  3. Invitations, so a client owner can add their own team: POST /api/t/{tenant}/invitations
+     (Admin+, store only a token HASH, 7-day expiry), GET /api/invitations/{token} (anonymous
+     preview), POST /api/invitations/{token}/accept (join as an existing user, or set a password and
+     join).
+  4. Angular: an admin provisioning view, /app/invite/:token, and the /app/tenants switcher.
 
-RESTRICTION: Do NOT store a raw invitation token — hash only. Do NOT let signup or slug-availability
-leak whether a slug belongs to an existing tenant beyond the boolean it must return, and rate-limit
-it. Do NOT let a tenant end up with zero active Owners — enforce that guardrail on every membership
-change. Do NOT wire a real email provider without telling me first.
+CONSTRAINT: Provisioning is one transaction plus outbox events — a half-created tenant is not an
+acceptable failure mode. Email delivery may be stubbed behind an IInvitationNotifier that logs the
+link in Development; say clearly that production needs a provider.
+
+RESTRICTION: Do NOT build a public /api/signup endpoint or a slug-availability check — there is no
+self-serve signup in this model, and building one contradicts it. Do NOT store a raw invitation
+token; hash only. Do NOT let a tenant end up with zero active Owners — enforce that on every
+membership change. Do NOT let the anonymous invitation preview reveal the tenant's name to an invalid
+token. Do NOT wire a real email provider without telling me first.
 
 USAGE: Use the add-endpoint and add-component skills. Use plan mode. Delegate review to code-reviewer
 and tenant-isolation-auditor.
 
 BEHAVIOR: Plan the provisioning transaction, the token lifecycle, and every failure path (duplicate
-slug, expired token, already-member, last-owner removal) before writing. Wait for approval.
-Implement, test each failure path explicitly, run both subagents, and summarize.
+slug, reserved slug, expired token, already-member, last-owner removal) before writing. Wait for
+approval. Implement, test each failure path explicitly, run both subagents, and summarize. Tell me
+what a newly provisioned client's owner actually sees on first login — if the answer is "an empty
+board," say so, because that is the onboarding gap product-completeness.md flags.
 ```
 
-## Prompt 14 — White-label branding
+## Prompt 15 — White-label branding
 
 ```
 SCOPE: Add per-tenant branding. TenantBranding CRUD (Admin+): product name, logo, favicon, accent and
@@ -482,14 +663,110 @@ and the contrast rule before writing. Wait for approval. Implement, verify two t
 differently with no component CSS changes, run both subagents, summarize.
 ```
 
-## Prompt 15 — End-to-end run + verification
+## Prompt 16 — Landing page copy — write it before any markup
+
+*The most commonly skipped step and the one that determines whether the page is any good. A landing page is a writing problem with a rendering step at the end.*
+
+```
+SCOPE: Write the complete copy for the <PRODUCT> landing page as a markdown document —
+docs/design/landing-page-copy.md — with no HTML, no CSS, no code. Every headline, every paragraph,
+every button label, every alt text, in final form.
+
+The page serves a consulting client who has been told about the tool and is arriving to use it, plus
+their colleagues who have not. Sections to draft:
+  - Hero: what it is and the one thing it does that a spreadsheet doesn't, in under 20 words
+  - The core insight: an overloaded sprint should be visible BEFORE it is lived through — the
+    Fibonacci points, the per-tenant overload threshold, the capacity picture across parallel clients
+  - Who it's for: agencies and consultancies running several client engagements at once
+  - What it looks like: 3–4 screenshot captions (board, timeline, roadmap, capacity)
+  - What it does not do yet: an honest short list
+  - Log in (→ /app) and request access
+  - Footer: built and operated by Architect4Hire, link to the repo
+
+CONSTRAINT: Match the Real Talk voice used across every deliverable in this repo — first person,
+direct, no hype, honest about tradeoffs. Read docs/design/product-completeness.md and AGENTS.md first
+so the claims are true. The tenant hierarchy is Tenant → Client → Project; effort is Fibonacci points;
+the overload threshold is per-tenant, not a constant.
+
+RESTRICTION: Do NOT write "10x", "supercharge", "AI-powered", "revolutionary", "seamless", or
+"effortless". Do NOT claim capabilities marked 🔴 in product-completeness.md — no self-serve trials,
+no integrations, no mobile app, no reporting. Do NOT invent a customer testimonial, a logo wall, a
+statistic, or a case study. Do NOT write a pricing section — pricing happens in a conversation.
+
+USAGE: Use plan mode.
+
+BEHAVIOR: Draft the copy, then tell me which claims you could NOT substantiate from the repo and left
+out. That list is more useful to me than the copy. Wait for approval before anything is rendered.
+```
+
+## Prompt 17 — Build the static landing page
+
+```
+SCOPE: Build the landing page as a static site from the approved copy. Single page, semantic HTML,
+no framework, no build step unless one is genuinely warranted. Output to the location the topology ADR
+(L0) specified. Include: responsive layout, the brand palette, real screenshots or honest
+placeholders, an OG image and meta tags, a favicon, and a "Log in" button pointing at /app whose
+destination is configurable rather than hardcoded.
+
+CONSTRAINT: Follow the brand direction in the repo. Accessibility is not optional: semantic
+landmarks, real heading hierarchy, alt text on every image, visible focus states, and WCAG AA contrast
+— the app already validates contrast for tenant branding (ADR-0019), so the marketing page should not
+be worse than the product. Target a fast first paint on a mid-range laptop over hotel wifi, because
+that is where a client will actually open it.
+
+RESTRICTION: Do NOT add a JavaScript framework, a CSS framework, or a build pipeline for a single
+static page — justify any dependency before adding it. Do NOT put a signup or login FORM on this page:
+credentials are entered on the app's own route under /app, and a form here would either need CORS or
+would fail to set the SameSite=Strict cookie. The button is a LINK to /app. Do NOT add tracking
+scripts, chat widgets, cookie banners, or third-party fonts. Do NOT invent copy — if something is
+missing, come back to L1.
+
+USAGE: Use the add-component skill only if the ADR chose an Angular-hosted page; otherwise plain files.
+
+BEHAVIOR: Plan the section structure and asset list before writing. Wait for approval. Build it, then
+report the page weight, the request count, and what you used as placeholder assets.
+```
+
+## Prompt 18 — Serve the three namespaces on one origin
+
+```
+SCOPE: Implement the topology decided in L0 so that on one hostname the ordered route precedence is:
+
+    1. /api/**   → the gateway's existing route table, untouched
+    2. /app/**   → the SPA shell (index.html), INCLUDING deep links like /app/t/acme/board
+    3. /  and known static paths → the landing page and its assets
+    4. anything else → 404
+
+Wire it into the Aspire AppHost so `aspire run` serves the whole thing locally.
+
+CONSTRAINT: Follow .claude/rules/gateway.md and .claude/rules/aspire.md. The gateway stays
+declarative — routing and edge concerns only. The SPA fallback must be scoped to /app/** ONLY. The
+existing API route table wins over everything.
+
+RESTRICTION: Do NOT introduce CORS. Do NOT change the cookie's SameSite, Secure, HttpOnly, or Path
+settings to make anything work — the cookie stays at Path=/ ; scoping it to /app looks tidy and breaks
+antiforgery in ways that are tedious to diagnose. If something appears to require a cookie change,
+stop and tell me, because it means the topology is wrong. Do NOT let the static handler or the SPA
+fallback swallow /api. Do NOT add business logic to the gateway.
+
+USAGE: Use the add-aspire-resource skill if a new resource is needed. Delegate review to
+code-reviewer.
+
+BEHAVIOR: Plan the route precedence explicitly — show me the ordered match list before implementing,
+because an over-broad fallback that shadows /api is the failure mode here. Wait for approval.
+Implement, run `aspire run`, and verify all six cases: /, /app, /app/login, /app/t/{slug}/board typed
+directly as a deep link, /api/ping, and an unknown path.
+```
+
+## Prompt 19 — End-to-end run + verification (including the front door)
 
 ```
 SCOPE: Run the whole system and verify it honestly, end to end. Start with `aspire run`. Provision
 two tenants through real signup. In each, create clients and projects, set sprint goals, add tasks,
 upload an attachment, invite a member, and hit a plan limit. Then verify: every service healthy;
 traces followable from gateway -> service -> bus -> consumer with TenantId tagged; the cross-tenant
-suite green; a redelivered message a no-op; a suspended tenant read-only; branding distinct per
+suite green; the front door correct (/ serves the landing page, /app resolves all four arrival cases,
+/app/t/{slug}/board works as a typed deep link, /api/ping reaches the gateway, unknown paths 404); a redelivered message a no-op; a suspended tenant read-only; branding distinct per
 tenant; the audit trail able to reconstruct one request cradle-to-grave by correlation id.
 
 CONSTRAINT: Follow .claude/rules/audit.md for the trail check and use the trace-a-request skill.
@@ -505,7 +782,57 @@ not verify and why. Rank the failures by risk, with tenant-isolation issues firs
 small they look. Then wait — don't start fixing.
 ```
 
-## Prompt 16 — Stretch: platform operations
+## Prompt 20 — Deploy the front door
+
+*This is the project's first deployment. Treat it as such — it's a forcing function for decisions that have been deferred.*
+
+```
+SCOPE: Deploy the front door to plannerpro.architect4hire.com (or the final hostname). Set up DNS,
+TLS, and a GitHub Actions workflow that deploys on merge to the default branch. Document the whole
+thing in docs/developer/deploying.md — including how to roll back.
+
+CONSTRAINT: Follow the existing CI conventions in .github/workflows/. Secrets come from GitHub
+environment secrets, never from source. If the topology ADR coupled the landing page to the gateway,
+say plainly in the doc that a copy change now requires a gateway deploy.
+
+RESTRICTION: Do NOT deploy the API, the services, or the database as part of this — the landing page
+and the app's public shell only, unless I say otherwise. Do NOT put any credential, connection string,
+or key in a workflow file. Do NOT skip the rollback procedure; a marketing page with no way back is
+the one that will need one.
+
+USAGE: Use plan mode.
+
+BEHAVIOR: Plan the hosting target, DNS records, certificate approach, and workflow before doing
+anything. Wait for approval. Then implement, deploy, and report the live URL, the TLS grade, and
+what is NOT yet deployed behind it — I want the gap stated explicitly rather than implied.
+```
+
+## Prompt 21 — The legal and analytics minimum
+
+```
+SCOPE: Add only what is actually required: a privacy notice covering what the app stores and what (if
+anything) the landing page collects, a terms page appropriate to a client tool rather than a public
+SaaS, and — only if I ask for it — privacy-respecting analytics with no cookie banner.
+
+CONSTRAINT: The tone matches the rest of the site: plain language, short, readable. The privacy notice
+must reflect what the system ACTUALLY does — read the audit trail design (ADR-0016) and note that a
+durable record of user actions exists, because that is a real disclosure.
+
+RESTRICTION: Do NOT add Google Analytics, a cookie consent banner, or any tracker that would require
+one. Do NOT generate legal text and present it as sufficient — flag clearly that a lawyer should
+review anything that will govern a client relationship. Do NOT claim compliance with any framework
+(GDPR, SOC 2, HIPAA) that has not actually been assessed.
+
+USAGE: Use plan mode.
+
+BEHAVIOR: Draft, then list the specific claims you are unsure about and recommend which need legal
+review. Wait before publishing anything.
+```
+
+---
+
+
+## Prompt 22 — Stretch: platform operations
 
 ```
 SCOPE: Add the platform surface: /api/admin/tenants console gated on IsPlatformAdmin (list with
@@ -531,6 +858,12 @@ subagents, summarize.
 ---
 
 # Part 2 — Operational templates (reuse anytime)
+
+---
+
+
+---
+
 
 ## Template A — Feature delivery (vertical slice within one service)
 
@@ -595,6 +928,13 @@ test that asserts every ITenantScoped type has a filter, run the cross-tenant su
 tenant-isolation-auditor.
 ```
 
+*Extra guardrails when the entity is new to the model:*
+
+- Which **service owns it** — if two seem to, it is one owner plus an integration event, never a shared table.
+- Is it genuinely tenant-scoped? The deliberate exceptions here are Identity tables and `Plan`. A new global entity is a defended decision, not a default.
+- Does it duplicate another service's data? A small event-fed read model is correct; a second copy of an authoritative table is not.
+- Confirm the reflection test **actually enumerates** the new type — don't assume it does.
+
 ## Template D — Refactor / cross-cutting change
 
 ```
@@ -633,6 +973,10 @@ another tenant would take, and the concrete fix. Explicitly list what you checke
 a bare "no issues" is indistinguishable from not having looked. Then wait.
 ```
 
+*Grep vectors to run every time:* `FindAsync`/`Find(`, `IgnoreQueryFilters`, unique indexes
+without `TenantId`, direct `db.Users` queries, cache keys with no tenant segment, unprefixed blob
+names, and raw SQL against tenant-scoped tables.
+
 ## Template F — Debug / harden
 
 ```
@@ -653,6 +997,487 @@ approval. Implement, add the regression test that would have caught it, and run 
 subagents.
 ```
 
+## Template G — Update the landing page when the product changes
+
+```
+SCOPE: The product now does <X>. Update the landing page to reflect it.
+
+CONSTRAINT: Update docs/design/landing-page-copy.md FIRST, then the page. The copy doc is the source
+of truth; a page edited directly will drift from it within a month. Match the Real Talk voice.
+
+RESTRICTION: Do NOT claim anything still marked 🔴 in docs/design/product-completeness.md. Do NOT
+quietly remove an item from the "what it doesn't do yet" list unless it genuinely now does it — that
+list is the page's credibility.
+
+BEHAVIOR: Show me the copy diff before touching the page.
+```
+
+## Template H — Add a client-branded entry point
+
+```
+SCOPE: Give <client> a branded arrival at /app/t/<slug> that shows their branding before
+authentication.
+
+CONSTRAINT: Use the existing anonymous branding endpoint (ADR-0019). Branding applies as CSS custom
+properties on document.documentElement; the :root block is the default theme.
+
+RESTRICTION: Do NOT edit component styles to theme anything. Do NOT return a 404 for an unknown slug —
+generic defaults only, so the endpoint cannot be used to enumerate clients. Do NOT expose anything
+beyond public-safe branding fields. Do NOT brand the marketing page at / — it is yours, not theirs.
+
+USAGE: Delegate review to tenant-isolation-auditor.
+
+BEHAVIOR: Verify a second client's slug renders differently with no component CSS changes.
+```
+
+## Template I — Rename the product
+
+```
+SCOPE: Rename the product from <OLD> to <NEW> across the repository.
+
+CONSTRAINT: Cover all of: .NET namespaces and project names, the solution file, Aspire resource names,
+database names, the Angular app, docs (including every ADR), AGENTS.md, CLAUDE.md, .claude/ and
+.github/, the landing page copy, meta tags, OG image, and the hostname.
+
+RESTRICTION: Do NOT rename database resources without noting that existing local volumes will be
+orphaned and how to migrate or discard them. Do NOT rename in a single commit mixed with other
+changes. Do NOT update generated files by hand — change .claude/ and run .github/sync-copilot.py.
+
+BEHAVIOR: Produce the complete inventory of affected files FIRST, grouped by category, and show me the
+count. Wait for approval. Then rename in one focused commit, run the full build, tests, and
+`sync-copilot.py --check`, and report anything that needed a manual decision.
+```
+
+---
+
+## Template J — Investigate a suspected leak
+
+*If you're running this against a real report, treat it as an incident.*
+
+```
+SCOPE: A user reports seeing data that does not belong to their tenant: <what they saw, where, when,
+which tenant they were in>.
+
+CONSTRAINT: Diagnose before changing anything. Establish the path first: was it an HTTP request or
+something rendered from a consumer-fed read model? That single distinction eliminates half the
+possible causes.
+
+RESTRICTION: Do NOT change code until you can state the root cause and name which of the five layers
+failed. Do NOT "fix" it by widening a filter, adding IgnoreQueryFilters, or special-casing the
+endpoint. Do NOT close the investigation at the first plausible cause — check whether the same
+mechanism failure exists in the other seven services.
+
+USAGE: Use the trace-a-request skill to reconstruct what actually happened from the audit trail.
+Delegate to tenant-isolation-auditor.
+
+BEHAVIOR: Report the root cause, which layer failed, the blast radius (which other services share the
+same mechanism), and the smallest correct fix — in Shared if the mechanism failed. Add the regression
+test that would have caught it. Tell me what data was exposed and to whom, as precisely as the trail
+allows; that question will be asked and a vague answer is worse than none.
+```
+
+---
+
+---
+
+# Part 3 — Proposed: Sprint Advisor
+
+> **Status: proposed, not scheduled.** A candidate ninth bounded context producing a pre-sprint risk
+> brief grounded in each tenant's own history — **Semantic Kernel** for orchestration, **OpenAI** for
+> inference, **Azure AI Foundry** for prompt versioning, evaluation and content safety. **Nothing here
+> runs until Prompt A0's ADRs are written and approved.** Treat it as a design document with
+> executable prompts attached.
+
+## Why this sequence looks the way it does
+
+**The golden rule here: build the deterministic half first.** Prompts A1 and A2 stand up the service, its read model, and a rules-based risk score with **no model call at all**. Only A3 introduces inference. That ordering is deliberate — a rules-based baseline is the thing you evaluate the model *against*, and without it "the AI seems good" is the only quality signal you will ever have.
+
+**The second rule: retrieval before generation.** A4 builds tenant-partitioned retrieval and proves isolation before any retrieved content reaches a prompt. Context assembly is the leak surface here, and it is the one your existing five layers do not cover.
+
+## What makes this different from every other feature in this repo
+
+| Concern | Everywhere else | Here |
+| --- | --- | --- |
+| Leak surface | A row crossing a filter | **Tenant A's history appearing as prose inside tenant B's brief** |
+| Isolation mechanism | EF query filter | **Index-level partitioning** — vector search never touches a query filter |
+| Idempotency | Don't apply the effect twice | Don't apply it twice **and don't re-spend tokens** |
+| Correctness | Deterministic; test asserts equality | Non-deterministic; test asserts **bounds and behaviour** |
+| Failure | 500, retry | Plausible, confident, wrong — **and no exception** |
+| Local dev | Emulator container | **No emulator exists.** Requires a deterministic stub provider |
+
+---
+
+
+## Prompt A0 — Write the ADRs, and wait
+
+*The constitution says a new service is an architectural decision, not a feature. This prompt exists to honor that rather than route around it.*
+
+```
+SCOPE: Do not write any implementation code. Draft the Architecture Decision Records required before
+PlannerPro can gain an AI capability, following the exact format in docs/adr/README.md, using the
+NEXT FREE numbers — check docs/adr/ first, do not assume a starting number:
+
+  ADR-00XX  The Advisor bounded context — a ninth service, consumer-fed, advisory-only
+  ADR-00XX  Semantic Kernel as the orchestration layer; OpenAI for inference; Foundry for
+            evaluation, prompt versioning and content safety
+  ADR-00XX  Tenant-partitioned retrieval — pgvector in advisordb, isolation enforced in the index
+  ADR-00XX  AI execution is asynchronous, event-driven, and cost-idempotent
+  ADR-00XX  AI credits as a plan limit (extends ADR-0017's replicated-quota pattern)
+  ADR-00XX  Amendment to ADR-0012 — the local-first exception and the deterministic stub provider
+
+Each must state real alternatives and real consequences, not a rationalization of a decision already
+made.
+
+CONSTRAINT: Follow the established ADR shape: Context / Decision / Consequences (Positive, Negative,
+Neutral) / Alternatives considered. Relate each to the ADRs it depends on or amends. Reuse existing
+patterns where they fit — ADR-0026 in particular should be short, because replicated quotas already
+solve it.
+
+RESTRICTION: Do NOT understate the negatives. Specifically, ADR-0022 must state that the Advisor is
+ADVISORY ONLY and never mutates another service's data, and say what that forecloses. ADR-0024 must
+state plainly that vector similarity search does NOT pass through an EF query filter, so isolation is
+enforced somewhere new — this is the sharpest edge of the whole feature. ADR-0025 must address what a
+redelivered event costs in tokens. ADR-0027 must be honest that "local-first, zero cloud spend" is
+being amended, not preserved, and say what a contributor without an API key actually gets. Do NOT
+write an ADR that concludes "and there are no real downsides."
+
+USAGE: Read docs/adr/README.md, ADR-0001, ADR-0012, ADR-0016 and ADR-0017 first — 0016 is the closest
+precedent for proposing a new consumer-fed service, and 0017 for the quota pattern.
+
+BEHAVIOR: Draft all six and show them to me. Then STOP. Do not scaffold anything. I want to approve
+the decisions before any code exists, and I specifically want to reconsider whether this should be a
+ninth service or a capability inside Planning — argue both sides of that in ADR-0022 rather than
+assuming the answer.
+```
+
+## Prompt A1 — The Advisor service and its read model (no AI)
+
+```
+SCOPE: Build PlannerPro.Advisor + PlannerPro.Advisor.Core over advisordb, following the established
+service pattern exactly. It is consumer-fed and has one read-only query surface. Build the read model
+ONLY — no model calls, no Semantic Kernel, no retrieval.
+
+Consume and maintain, as tenant-scoped local read models:
+  - SprintHistory       — from SprintGoalSet, TaskChanged, sprint close events: per (sprint, project)
+                          the goal text, final status, planned points, completed points, slip flag
+  - EstimateOutcome     — per task: estimated points vs. actual effort signal, for calibration
+  - AllocationSnapshot  — from CapacitySet and team membership: who is on which project, at what share
+  - ProjectReference    — name, client, colour (the same pattern Planning already uses)
+
+Expose GET /api/t/{tenant}/advisor/history as a read-only diagnostic surface so the read model can be
+inspected before anything depends on it.
+
+CONSTRAINT: Follow .claude/rules/backend.md, .claude/rules/tenancy.md and .claude/rules/messaging.md.
+Thin host + .Core stack. Every entity implements ITenantScoped. Consumers are inbox-idempotent and
+take scope from the envelope. Register advisordb in the AppHost with WithReference/WaitFor.
+
+RESTRICTION: Do NOT call any model. Do NOT add Semantic Kernel, an AI package, or pgvector yet. Do
+NOT read another service's database — everything arrives by event. Do NOT let the Advisor write to
+any store but advisordb, now or ever. Do NOT use FindAsync.
+
+USAGE: Use the add-endpoint and add-tenant-scoped-entity skills. Use plan mode. Delegate review to
+code-reviewer, test-gap-analyzer and tenant-isolation-auditor.
+
+BEHAVIOR: Plan the read-model shape first — specifically, what "slipped" means as a derived fact and
+which existing events actually carry enough to compute it. If an event does NOT carry what's needed,
+say so rather than inferring it; that's a contract gap to fix in the publisher, not to paper over
+here. Wait for approval. Then implement, migrate, test (including the cross-tenant suite), and report
+which of the four read models are fully supported by today's events and which are not.
+```
+
+## Prompt A2 — The deterministic baseline (still no AI)
+
+*The thing you will measure the model against. Skipping this means never knowing whether the AI helps.*
+
+```
+SCOPE: Implement a rules-based sprint risk score in Advisor.Core, with no model involvement. For each
+(sprint, project) goal, produce a RiskAssessment: a score, a band (Low/Medium/High), and a list of
+plain-language reasons, computed from the read model — historical slip rate for this project, planned
+points versus the tenant's overload threshold, share of points in tasks above 8, estimate-calibration
+drift, and people allocated across multiple projects.
+
+Expose GET /api/t/{tenant}/advisor/sprints/{sprintId}/risk returning the assessment for every project
+in that sprint.
+
+CONSTRAINT: Follow .claude/rules/backend.md. Every weight and threshold is a named, documented
+constant in one place — and any that should be per-tenant reads from tenant settings, not a hardcoded
+value. The overload threshold in particular is already a per-tenant setting and must not be
+reintroduced as a constant.
+
+RESTRICTION: Do NOT call a model. Do NOT invent a scoring formula and present it as validated — state
+plainly that the weights are a starting hypothesis to be tuned against real outcomes. Do NOT hide the
+reasons behind the score; the reason list is the product, the number is a sort key.
+
+USAGE: Use the add-endpoint skill. Use plan mode. Delegate review to code-reviewer.
+
+BEHAVIOR: Plan the signals and the weighting before writing, and tell me which signals you expect to
+be predictive and which you're including on intuition. Wait for approval. Implement with unit tests
+over hand-built histories that assert each signal independently moves the score in the expected
+direction. Report which signals the current read model can genuinely support.
+```
+
+## Prompt A3 — Semantic Kernel, provider abstraction, and the local stub
+
+```
+SCOPE: Introduce Semantic Kernel into Advisor.Core as the orchestration layer, with a provider
+abstraction and THREE registrations selected by configuration:
+  - OpenAI (direct)                — default for development with a key
+  - Azure OpenAI via AI Foundry    — the deployment target; model and version from configuration
+  - DeterministicStub              — a custom IChatCompletionService returning fixed, structured,
+                                     plausible output with NO network call
+
+Wire the stub as the default when no credential is configured, so `aspire run` works for anyone
+cloning the repo. Add an AdvisorKernel abstraction so the rest of Advisor.Core never touches an SDK
+type directly. Add SK's telemetry to the existing OpenTelemetry pipeline, with TenantId on every span.
+
+CONSTRAINT: Follow ADR-0023 and ADR-0027. Credentials come from Aspire-injected configuration,
+user-secrets in development, environment variables in production — never a literal. Model deployment
+name and version are configuration, not constants. Follow .claude/rules/aspire.md for resource wiring.
+
+RESTRICTION: Do NOT hardcode an API key, endpoint, deployment name, or model version anywhere — the
+secret-guard hook will block it and it should. Do NOT let SK types leak out of the AI layer into the
+facade, business layer, or any ServiceModel. Do NOT make the stub throw or return "not configured" —
+it must return usable structured output, or local development is broken and nobody will run this
+repo. Do NOT call a real model in a unit test.
+
+USAGE: Verify Semantic Kernel package names, the IChatCompletionService surface, and Azure AI Foundry
+connection configuration against current Microsoft documentation before writing — this stack moves
+faster than any other part of the system and your recalled API names are likely stale. Use plan mode.
+Delegate review to code-reviewer.
+
+BEHAVIOR: Plan the abstraction boundary and show me the interface before writing — specifically, what
+Advisor.Core sees and what stays behind the boundary. Wait for approval. Implement, then prove the
+stub path works with no credentials configured by running `aspire run` and hitting the endpoint. Tell
+me exactly what a contributor with no API key can and cannot exercise.
+```
+
+## Prompt A4 — Tenant-partitioned retrieval ← the dangerous one
+
+```
+SCOPE: Add retrieval over each tenant's own sprint history so the Advisor can ground its reasoning in
+specific past sprints. Use pgvector in advisordb (no new datastore — same reasoning as ADR-0016's
+choice of Postgres + jsonb). Embed goal text, retro notes, and outcome summaries. Provide a
+SearchTenantHistory operation returning the most relevant past sprints for a given goal.
+
+THE CRITICAL PART: vector similarity search does NOT pass through an EF Core global query filter. The
+isolation this system relies on everywhere else is absent here. Tenant partitioning must be enforced
+in the query itself — a mandatory tenant predicate applied before the similarity operator, in a place
+a caller cannot omit or forget. Design it so that a retrieval call without a tenant is impossible to
+express, not merely discouraged.
+
+CONSTRAINT: Follow .claude/rules/tenancy.md and ADR-0024. Embeddings are tenant-scoped rows like any
+other. Embedding generation is asynchronous and inbox-idempotent — re-embedding on redelivery wastes
+money and must not happen.
+
+RESTRICTION: Do NOT expose a retrieval API that accepts an optional tenant. Do NOT rely on the caller
+passing the right tenant — take it from ITenantContext inside the retrieval layer itself. Do NOT
+build a shared index across tenants with post-filtering; a top-k that filters after ranking silently
+returns fewer or zero results AND has already ranked against another tenant's data. Do NOT let
+retrieved text reach a prompt in this prompt — that is A5.
+
+USAGE: Use the add-tenant-scoped-entity skill for the embedding entity. Use plan mode. Delegate review
+to code-reviewer AND tenant-isolation-auditor — and tell the auditor explicitly that query filters do
+not apply on this path, so it does not report a false clean.
+
+BEHAVIOR: Plan the partitioning strategy and state, in writing, exactly where the tenant predicate is
+applied and why it cannot be bypassed. Wait for approval. Implement with tests that: two tenants with
+deliberately similar goal text never retrieve each other's rows; a retrieval attempted with no tenant
+scope fails loudly rather than returning everything; and re-delivery does not re-embed. Report the
+result of the similar-text test specifically — that is the one that matters.
+```
+
+## Prompt A5 — The risk brief, end to end
+
+```
+SCOPE: Produce the AI-authored sprint risk brief. On a SprintOpened event (or an explicit refresh
+request), for each project goal in the sprint: assemble context from the read model and tenant-scoped
+retrieval, call the model through the AdvisorKernel, and persist a SprintBrief containing a narrative
+assessment, the contributing factors, and a suggested action — alongside the deterministic score from
+A2, which is retained and shown, not replaced.
+
+Expose GET /api/t/{tenant}/advisor/sprints/{sprintId}/brief and
+POST /api/t/{tenant}/advisor/sprints/{sprintId}/brief/refresh (Member+).
+
+Context assembly is the security boundary of this feature. Build it as a single, testable
+ContextAssembler that takes ITenantContext and returns a prompt payload — with every input traceable
+to a tenant-scoped source.
+
+CONSTRAINT: Follow ADR-0022 and ADR-0025. Generation is asynchronous, triggered by an event, and
+inbox-idempotent including cost — a redelivered SprintOpened must not re-spend tokens. Persist the
+model identifier, prompt version, and token counts with every brief. Structured output only: define
+the response schema and validate it; a brief that fails validation is discarded and retried, not
+displayed. Emit BriefGenerated through the outbox so Audit and Billing see it.
+
+RESTRICTION: **The Advisor is advisory only. It must NOT mutate a goal, task, capacity, plan or any
+other service's data, under any circumstance, and must not publish an event that causes another
+service to do so.** Do NOT put raw un-templated user text into a prompt without treating it as
+untrusted input — goal text is authored by users and a goal reading "ignore previous instructions" is
+a realistic thing to receive. Do NOT include any data in the prompt that did not come through the
+tenant-scoped assembler. Do NOT display a brief that failed schema validation. Do NOT let a model
+failure fail the sprint — the deterministic score must still render.
+
+USAGE: Use the add-endpoint skill. Use plan mode. Delegate review to code-reviewer,
+test-gap-analyzer and tenant-isolation-auditor.
+
+BEHAVIOR: Plan the context assembly FIRST and show me every field that will enter the prompt and
+where each comes from — I want to read that list before any prompt text is written. Wait for
+approval. Then implement, and test: a brief for tenant A contains no tenant B data under deliberately
+similar histories; a redelivered event produces no second model call; a malformed model response is
+discarded; a model outage degrades to the deterministic score rather than an error. Report token cost
+per brief on realistic data.
+```
+
+## Prompt A6 — AI credits as a plan limit
+
+```
+SCOPE: Meter and limit AI usage per tenant, reusing the existing replicated-quota pattern rather than
+inventing a mechanism. Advisor publishes AiUsageRecorded (tokens in, tokens out, model, operation) on
+every completed generation. Billing consumes it, maintains a per-tenant monthly credit counter, adds
+MaxAiCreditsPerMonth to the plan model, and publishes TenantQuotaChanged as it already does. Advisor
+enforces against its LOCAL quota snapshot and refuses with 402 { limit: "MaxAiCreditsPerMonth" }.
+
+Add a usage view to the plan/usage page showing credits consumed against the allowance.
+
+CONSTRAINT: Follow ADR-0017 and ADR-0026. No synchronous call to Billing on the generation path.
+Counters are inbox-idempotent — a redelivered usage event must not double-count. Credits reset on the
+billing period boundary.
+
+RESTRICTION: Do NOT add a synchronous check. Do NOT let a tenant at zero credits lose the
+deterministic risk score — that costs nothing and must keep working; only the AI narrative is gated.
+Do NOT meter in tokens in the UI; convert to a unit a customer can reason about and state the
+conversion. Do NOT let the overshoot window here go unstated — with a variable-cost resource it is
+larger and more expensive than it is for project counts, and that needs saying out loud.
+
+USAGE: Use the add-endpoint skill. Use plan mode. Delegate review to code-reviewer and
+tenant-isolation-auditor.
+
+BEHAVIOR: Plan the metering contract and — explicitly — size the overshoot window in credits, not in
+milliseconds. Wait for approval. Implement and test: a tenant at its limit gets 402 and still sees
+the deterministic score; a double-delivered usage event does not double-count; a quota change
+propagates. Report the worst-case overshoot in real money.
+```
+
+## Prompt A7 — Evaluation, prompt versioning, and safety via Foundry
+
+*The prompt most likely to be skipped, and the one that separates a demo from a product.*
+
+```
+SCOPE: Make the Advisor's quality measurable and its prompts governable, using Azure AI Foundry.
+  1. Prompt assets versioned in Foundry, referenced by version from configuration — never inline
+     strings in code. The version is persisted with every brief (A5) so any output is reproducible.
+  2. An evaluation dataset built from real closed sprints in the demo tenants: goal, context, and the
+     KNOWN outcome (slipped / delivered).
+  3. An evaluation run scoring the AI brief against the A2 deterministic baseline on the same
+     dataset, reporting whether the AI is actually better at predicting slippage — and by how much.
+  4. Content safety filters on input and output.
+  5. A regression gate: an evaluation run that drops below the recorded baseline fails.
+
+CONSTRAINT: Follow ADR-0023. Evaluation runs against a fixed dataset with a pinned model version, or
+the result means nothing. Foundry configuration is injected, never hardcoded.
+
+RESTRICTION: Do NOT ship a prompt change without an evaluation run. Do NOT evaluate on data the
+prompt was tuned against. Do NOT report a quality improvement without stating the sample size and the
+baseline it beat — "the briefs look good" is not a result. Do NOT let the evaluation dataset contain
+one tenant's data used to score another's.
+
+USAGE: Verify Azure AI Foundry's evaluation and prompt-asset APIs against current Microsoft
+documentation — this surface is new and moves. Use plan mode. Delegate review to code-reviewer.
+
+BEHAVIOR: Plan the dataset construction and the metric before building — specifically, what counts as
+a correct prediction and what the baseline scores. Wait for approval. Implement, run the evaluation,
+and report the actual numbers including the AI-versus-deterministic comparison. **If the AI does not
+beat the rules-based baseline, say so plainly.** That is a real and useful finding, and shipping the
+feature anyway would be the wrong call.
+```
+
+## Prompt A8 — The Advisor UI
+
+```
+SCOPE: Surface the Advisor in the SPA. On the sprint board, a per-project risk band with the
+deterministic reasons always visible. A brief panel showing the AI narrative, its contributing
+factors, and the suggested action. A refresh control (Member+). A credits indicator when a tenant is
+near its limit.
+
+CONSTRAINT: Follow .claude/rules/frontend.md — zoneless, signals, typed services, one interceptor
+owning the slug. The brief loads asynchronously and independently of the board; the board never waits
+on it.
+
+RESTRICTION: Do NOT present the AI narrative as fact. Label it as an assessment, show the model and
+when it was generated, and make the deterministic reasons visible alongside it — a user must be able
+to see WHY without trusting the prose. Do NOT offer a control that applies a suggestion
+automatically; the Advisor is advisory (ADR-0022) and a one-click "apply" would undo that decision
+through the UI. Do NOT block the board render on a missing, stale, or failed brief. Do NOT hardcode
+risk thresholds — they come from the API.
+
+USAGE: Use the add-component skill. Use plan mode. Delegate review to code-reviewer and
+api-contract-checker.
+
+BEHAVIOR: Plan the component tree and, specifically, how the UI communicates uncertainty — that's the
+design problem here, not the layout. Wait for approval. Implement, run ng test and ng build, and
+report how the UI behaves when the brief is absent, stale, or generated by a since-superseded prompt
+version.
+```
+
+---
+
+
+## Template K — Add an Advisor capability
+
+```
+SCOPE: Add <capability> to the Advisor — <what it assesses and what it returns>.
+
+CONSTRAINT: Follow ADR-0022 through ADR-0027. It reads only advisordb, is advisory-only, and is
+asynchronous and cost-idempotent. Context assembly goes through the existing tenant-scoped
+ContextAssembler. Structured output with a validated schema. Prompt versioned in Foundry.
+
+RESTRICTION: Do NOT mutate anything outside advisordb. Do NOT bypass the ContextAssembler. Do NOT add
+a new prompt without adding it to the evaluation dataset. Do NOT ship without a deterministic
+fallback for when the model is unavailable or the tenant is out of credits.
+
+USAGE: Use the add-endpoint skill.
+
+BEHAVIOR: Show me every field entering the prompt and its tenant-scoped source before writing prompt
+text. Wait for approval. Implement, evaluate against the baseline, and report the numbers and the
+per-call token cost.
+```
+
+## Template L — Audit an AI surface for tenant leakage
+
+*Run this on any change touching context assembly, retrieval, or caching. Your standard isolation
+audit does not cover this path.*
+
+```
+SCOPE: Audit <the change / the Advisor> for cross-tenant leakage on the AI path specifically.
+
+CONSTRAINT: The five standard layers DO NOT fully apply here. Check these instead, in addition:
+  1. Context assembly — is every field traceable to a tenant-scoped source? Any constant, cache,
+     global lookup, or "example" embedded in a prompt template that came from real data?
+  2. Retrieval — is the tenant predicate applied BEFORE the similarity operator, not after? Is a
+     tenant-less call impossible to express?
+  3. Embeddings — are stored vectors tenant-scoped rows, and is the index partitioned?
+  4. Caching — does any prompt, response, or embedding cache key include TenantId? A shared prompt
+     cache is a cross-tenant leak with a fast path.
+  5. Evaluation data — does any dataset mix tenants?
+  6. Logs and telemetry — do prompt or completion contents reach logs, and if so, whose?
+  7. Prompt injection — can user-authored goal text alter instructions or induce disclosure of
+     context from the assembler?
+
+RESTRICTION: This is READ-ONLY — report, do not fix. Do NOT report the standard five layers as clean
+and stop; on this path they are largely irrelevant. Do NOT downgrade a finding because the leaked
+content would be "just a sentence" — a sentence of another tenant's sprint history is a disclosure.
+
+USAGE: Delegate to tenant-isolation-auditor, telling it explicitly that EF query filters do not apply
+to vector search or to prompt assembly.
+
+BEHAVIOR: Report findings ranked by severity, each with the specific path by which one tenant's data
+could reach another's output. Then list, item by item, which of the seven checks above you performed
+and what you found. Then wait.
+```
+
+---
+
+---
+
 ## Pro tips
 
 - **Read the plan, not the code.** The highest-leverage thirty seconds you spend is on the plan Claude shows before it writes. Boundary mistakes and missing tenancy stories are obvious there and expensive later.
@@ -660,3 +1485,12 @@ subagents.
 - **The tenancy question, every time.** "Where does `TenantId` come from on this path?" has exactly two right answers: the gateway's projected header, or the event envelope. Any third answer is a bug.
 - **A leak found in one service is a mechanism failure.** Fix it in `PlannerPro.Shared` and re-run the suite everywhere. Patching the one endpoint means the other seven still have it.
 - **When you reuse a Part 2 template three times, promote it to a skill.** That's the signal it's a procedure, not a prompt.
+- **The tenancy question, every time:** "Where does `TenantId` come from on this path?" Two right answers, gateway header or event envelope. Any third answer is a bug.
+- **"No data" is usually a scope problem, not a query problem.** It reads like a query bug and gets debugged in the wrong place for an hour.
+- **Two tenants in dev, always.** One tenant proves nothing; two make a leak visible by eye.
+- **Re-run T1 on every EF upgrade.** The assumption it proves is version-sensitive, and nothing will tell you when it stops holding.
+- **The deterministic baseline is the product's floor.** If the model is unavailable, the tenant is out of credits, or a response fails validation, the user still gets a useful risk score. Build it first, keep it visible, never let the AI path be load-bearing for the core promise.
+- **Context assembly is the security boundary.** Everywhere else in this system a leak is a row. Here it is a paragraph, and no filter, interceptor, or type system will catch it. Review the assembler's field list the way you'd review a migration.
+- **"Idempotent" now has a cost dimension.** A redelivered event that re-runs a handler is correct-but-expensive. Check the token spend on every retry path.
+- **Evaluate before you believe it.** A7 exists because "the briefs read well" is the easiest way to ship a feature that is worse than arithmetic. If the baseline wins, that's the finding — publish it.
+- **Verify the SDK surface, always.** Semantic Kernel and Foundry move faster than anything else in this stack. Recalled API names in this area are stale more often than not.
