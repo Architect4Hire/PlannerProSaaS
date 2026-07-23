@@ -1,5 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using PlannerPro.Shared.Persistence;
+using PlannerPro.Shared.Tenancy;
 
 namespace PlannerPro.Shared.Tests.TestSupport;
 
@@ -17,13 +19,16 @@ internal sealed class SqliteTestDbContextFactory : IDisposable
         _connection.Open();
     }
 
-    public TestDbContext CreateContext()
+    public TestDbContext CreateContext(ITenantContext? tenant = null)
     {
+        var tenantContext = tenant ?? StaticTenantContext.Bypass;
+
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite(_connection)
+            .AddInterceptors(new TenantSaveChangesInterceptor(tenantContext))
             .Options;
 
-        var context = new TestDbContext(options);
+        var context = new TestDbContext(options, tenantContext);
         context.Database.EnsureCreated();
         return context;
     }

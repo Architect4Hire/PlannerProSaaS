@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using PlannerPro.Shared.Caching;
 using PlannerPro.Shared.Exceptions;
 using PlannerPro.Shared.Persistence;
+using PlannerPro.Shared.Tenancy;
 
 namespace PlannerPro.Shared;
 
@@ -29,6 +30,30 @@ public static class SharedServiceCollectionExtensions
     {
         services.AddExceptionHandler<SharedExceptionHandler>();
         services.AddProblemDetails();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers <see cref="ITenantContext"/> (scoped, populated per request by
+    /// <see cref="TenantContextMiddleware"/>) and <see cref="TenantSaveChangesInterceptor"/>.
+    /// This does NOT register the middleware itself — call
+    /// <c>app.UseMiddleware&lt;TenantContextMiddleware&gt;()</c> early in each host's pipeline — and
+    /// does NOT wire the interceptor into any <see cref="Microsoft.EntityFrameworkCore.DbContextOptions"/>;
+    /// EF Core does not auto-discover DI-registered interceptors, so each service's own DbContext
+    /// registration must do it explicitly:
+    /// <code>
+    /// services.AddDbContext&lt;PlanningDbContext&gt;((sp, options) =&gt;
+    ///     options.UseSqlServer(...).AddInterceptors(sp.GetRequiredService&lt;TenantSaveChangesInterceptor&gt;()));
+    /// </code>
+    /// Use <c>AddDbContext</c>, not <c>AddDbContextPool</c> — the tenant query filter depends on a
+    /// fresh context instance per DI scope; see the remarks on <see
+    /// cref="Persistence.SharedDbContext.OnModelCreating"/>.
+    /// </summary>
+    public static IServiceCollection AddSharedTenancy(this IServiceCollection services)
+    {
+        services.TryAddScoped<TenantContext>();
+        services.TryAddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
+        services.TryAddScoped<TenantSaveChangesInterceptor>();
         return services;
     }
 }
