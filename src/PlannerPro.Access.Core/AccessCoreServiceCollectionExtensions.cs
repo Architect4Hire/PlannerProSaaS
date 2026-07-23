@@ -61,6 +61,7 @@ public static class AccessCoreServiceCollectionExtensions
             .AddDefaultTokenProviders();
 
         services.AddScoped<IValidator<LoginViewModel>, LoginViewModelValidator>();
+        services.AddScoped<IValidator<SignupViewModel>, SignupViewModelValidator>();
 
         services.AddScoped<ITenantRepository, TenantRepository>();
         services.AddScoped<ITenantMembershipRepository, TenantMembershipRepository>();
@@ -70,6 +71,11 @@ public static class AccessCoreServiceCollectionExtensions
 
         services.AddScoped<IAuthBusiness, AuthBusiness>();
         services.AddScoped<IAuthFacade, AuthFacade>();
+
+        services.AddScoped<ITenantProvisioningRepository, TenantProvisioningRepository>();
+        services.AddScoped<ITenantProvisioningDataLayer, TenantProvisioningDataLayer>();
+        services.AddScoped<ITenantProvisioningBusiness, TenantProvisioningBusiness>();
+        services.AddScoped<ITenantFacade, TenantFacade>();
 
         return services;
     }

@@ -4,9 +4,18 @@ var sql = builder.AddSqlServer("sql")
     .WithLifetime(ContainerLifetime.Persistent);
 
 var accessDb = sql.AddDatabase("accessdb");
+var portfolioDb = sql.AddDatabase("portfoliodb");
 
 var serviceBus = builder.AddAzureServiceBus("servicebus")
     .RunAsEmulator();
+
+// Access is the only publisher today; "access-events" is its one outbox topic (Subject
+// differentiates event type per `.claude/rules/messaging.md`). Portfolio's subscription is the first
+// real consumer of the loop this AppHost's own comments anticipated. Named "portfolio-events", not
+// "portfolio" — Aspire resource names are a single flat namespace, and "portfolio" is already taken
+// by the Portfolio project resource below.
+var accessEventsTopic = serviceBus.AddServiceBusTopic("access-events");
+accessEventsTopic.AddServiceBusSubscription("portfolio-events");
 
 var storage = builder.AddAzureStorage("storage")
     .RunAsEmulator();
@@ -19,12 +28,19 @@ var storage = builder.AddAzureStorage("storage")
 var blobs = storage.AddBlobs("blobs");
 var dataProtectionKeys = storage.AddBlobContainer("dataprotection-keys");
 
-// Not yet wired to serviceBus: Access publishes no events until the tenant-provisioning endpoint
-// (next in the scaffolding sequence) actually needs the outbox dispatcher — adding it now would be
-// dead wiring.
+// Access now publishes TenantProvisioned through its outbox dispatcher — signup is the first event
+// this system's own comments anticipated wiring.
 var access = builder.AddProject<Projects.PlannerPro_Access>("access")
     .WithReference(accessDb).WaitFor(accessDb)
-    .WithReference(blobs).WaitFor(dataProtectionKeys);
+    .WithReference(blobs).WaitFor(dataProtectionKeys)
+    .WithReference(serviceBus).WaitFor(serviceBus);
+
+// Portfolio has no public HTTP surface in this slice — only a TenantProvisioned consumer — so it's
+// not referenced by the gateway. Add that reference (and a YARP cluster/route) when it ships an
+// endpoint, not before.
+var portfolio = builder.AddProject<Projects.PlannerPro_Portfolio>("portfolio")
+    .WithReference(portfolioDb).WaitFor(portfolioDb)
+    .WithReference(serviceBus).WaitFor(serviceBus);
 
 var gateway = builder.AddProject<Projects.PlannerPro_Gateway>("gateway")
     .WithReference(blobs).WaitFor(dataProtectionKeys)

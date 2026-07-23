@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PlannerPro.Access\PlannerPro.Access.csproj" />
     <ProjectReference Include="..\PlannerPro.Gateway\PlannerPro.Gateway.csproj" />
+    <ProjectReference Include="..\PlannerPro.Portfolio\PlannerPro.Portfolio.csproj" />
   </ItemGroup>
 
 </Project>

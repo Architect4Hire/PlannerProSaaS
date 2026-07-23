@@ -1,17 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
-    <ProjectReference Include="..\PlannerPro.Access.Core\PlannerPro.Access.Core.csproj" />
+    <ProjectReference Include="..\PlannerPro.Portfolio.Core\PlannerPro.Portfolio.Core.csproj" />
     <ProjectReference Include="..\PlannerPro.ServiceDefaults\PlannerPro.ServiceDefaults.csproj" />
     <ProjectReference Include="..\PlannerPro.Shared\PlannerPro.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Aspire.Azure.Messaging.ServiceBus" />
-    <PackageReference Include="Aspire.Azure.Storage.Blobs" />
-    <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" />
     <!-- Required by `dotnet ef` when this host is the startup project, even though the
-         DbContext/design-time factory live in PlannerPro.Access.Core, which already has this too. -->
+         DbContext/design-time factory live in PlannerPro.Portfolio.Core, which already has this too. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -19,7 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="PlannerPro.Access.Tests" />
+    <InternalsVisibleTo Include="PlannerPro.Portfolio.Tests" />
   </ItemGroup>
 
 </Project>

@@ -1,8 +1,10 @@
 using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.DataProtection;
 using PlannerPro.Access.Core;
+using PlannerPro.Access.Core.Data;
 using PlannerPro.Shared;
 using PlannerPro.Shared.Authentication;
+using PlannerPro.Shared.Messaging;
 using PlannerPro.Shared.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +18,12 @@ builder.Services.AddControllers();
 // package; see the remarks on AddAccessCore for why that integration's unconditional DbContext pooling
 // is incompatible with this system's per-request-scoped ITenantContext design.
 builder.Services.AddAccessCore(builder.Configuration);
+
+// Access now publishes (the signup endpoint's TenantProvisioned) — one topic per publishing service,
+// Subject differentiates event type (`.claude/rules/messaging.md`). The dispatcher is the only sender;
+// nothing else in this service ever touches ServiceBusClient directly.
+builder.AddAzureServiceBusClient("servicebus");
+builder.Services.AddOutboxDispatcher<AccessDbContext>("access-events");
 
 // The "blobs" connection name is the Aspire blob-SERVICE-level resource (storage.AddBlobs("blobs")
 // in the AppHost) — distinct from the "dataprotection-keys" AddBlobContainer resource, which exists
