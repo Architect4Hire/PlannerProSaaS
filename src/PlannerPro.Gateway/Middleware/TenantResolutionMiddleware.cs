@@ -16,8 +16,11 @@ namespace PlannerPro.Gateway.Middleware;
 /// </summary>
 public sealed class TenantResolutionMiddleware(RequestDelegate next, ITenantDirectory tenantDirectory)
 {
-    private static readonly HashSet<string> ReadOnlyStatuses =
-        new(StringComparer.OrdinalIgnoreCase) { "Suspended", "PastDue", "Cancelled" };
+    // Fail closed: only these two statuses (per the Billing lifecycle Trialing -> Active -> PastDue ->
+    // Suspended -> Cancelled) permit writes. An unrecognized status — a typo, a future status Access
+    // adds, anything this gateway doesn't know about yet — defaults to read-only rather than writable.
+    private static readonly HashSet<string> WritableStatuses =
+        new(StringComparer.OrdinalIgnoreCase) { "Active", "Trialing" };
 
     private static readonly HashSet<string> MutatingMethods =
         new(StringComparer.OrdinalIgnoreCase) { "POST", "PUT", "PATCH", "DELETE" };
@@ -62,7 +65,7 @@ public sealed class TenantResolutionMiddleware(RequestDelegate next, ITenantDire
             return;
         }
 
-        if (ReadOnlyStatuses.Contains(tenant.Status) && MutatingMethods.Contains(httpContext.Request.Method))
+        if (!WritableStatuses.Contains(tenant.Status) && MutatingMethods.Contains(httpContext.Request.Method))
         {
             await WriteReadOnlyAsync(httpContext);
             return;

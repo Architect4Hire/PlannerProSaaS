@@ -44,6 +44,34 @@ public sealed class GatewayWebApplicationFactoryTests
     }
 
     [Fact]
+    public async Task Admin_AuthenticatedNonAdmin_Returns403()
+    {
+        await using var factory = new GatewayTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.ActorIdHeader, Guid.NewGuid().ToString());
+
+        var response = await client.GetAsync("/api/admin/tenants");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Admin_AuthenticatedPlatformAdmin_PassesTheAdminGate()
+    {
+        await using var factory = new GatewayTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.ActorIdHeader, Guid.NewGuid().ToString());
+        client.DefaultRequestHeaders.Add(TestAuthHandler.PlatformAdminHeader, "true");
+
+        var response = await client.GetAsync("/api/admin/tenants");
+
+        // Access doesn't exist yet, so this can't reach a real destination — the point of this test is
+        // only that the platform-admin gate itself doesn't reject a genuine platform admin.
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task TenantScopedRoute_NoAuthHeader_Returns401BeforeAnyTenantLookup()
     {
         await using var factory = new GatewayTestFactory();

@@ -194,6 +194,43 @@ public sealed class TenantResolutionMiddlewareTests
     }
 
     [Fact]
+    public async Task InvokeAsync_TrialingTenant_AllowsMutatingVerbs()
+    {
+        var tenantId = Guid.NewGuid();
+        var actorId = Guid.NewGuid();
+        var directory = new FakeTenantDirectory();
+        directory.AddTenant(new TenantLookup(tenantId, "acme", "Trialing", "free"));
+        directory.AddMembership(tenantId, actorId, new MembershipLookup("Admin"));
+
+        var context = CreateContext("/api/t/acme/board", "POST", actorId);
+        var nextCalled = false;
+        var middleware = new TenantResolutionMiddleware(_ => { nextCalled = true; return Task.CompletedTask; }, directory);
+
+        await middleware.InvokeAsync(context);
+
+        Assert.True(nextCalled);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_UnrecognizedTenantStatus_FailsClosedAndRefusesMutatingVerbs()
+    {
+        var tenantId = Guid.NewGuid();
+        var actorId = Guid.NewGuid();
+        var directory = new FakeTenantDirectory();
+        directory.AddTenant(new TenantLookup(tenantId, "acme", "SomeFutureStatusNobodyKnowsAboutYet", "team"));
+        directory.AddMembership(tenantId, actorId, new MembershipLookup("Admin"));
+
+        var context = CreateContext("/api/t/acme/board", "POST", actorId);
+        var nextCalled = false;
+        var middleware = new TenantResolutionMiddleware(_ => { nextCalled = true; return Task.CompletedTask; }, directory);
+
+        await middleware.InvokeAsync(context);
+
+        Assert.False(nextCalled);
+        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+    }
+
+    [Fact]
     public async Task InvokeAsync_NoAuthenticatedActor_ThrowsRatherThanResolvingWithEmptyActor()
     {
         var directory = new FakeTenantDirectory();

@@ -14,12 +14,33 @@ builder.Services.AddSharedExceptionHandler();
 
 builder.Services.AddGatewayCookieAuthentication(builder.Environment);
 builder.Services.AddAuthorization(options =>
-    options.AddPolicy("RequireAuthenticatedCaller", policy => policy.RequireAuthenticatedUser()));
+{
+    options.AddPolicy("RequireAuthenticatedCaller", policy => policy.RequireAuthenticatedUser());
+
+    // A coarse, uniform gate for the whole /api/admin/* prefix (every admin route needs the same
+    // platform-admin check, unlike per-endpoint tenant roles, so doing it once here is consistent
+    // with "one implementation of the most security-sensitive check" rather than trusting every
+    // future admin endpoint in Access to remember it). This is a 403 today, not the 404-never-403
+    // treatment the rest of the platform surface eventually needs — that refinement (a custom
+    // authorization result handler so a non-admin gets the same indistinguishable 404 a non-member
+    // gets) is deliberately left to the prompt that builds the actual admin surface.
+    options.AddPolicy("RequirePlatformAdmin", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireClaim("IsPlatformAdmin", "true"));
+});
 
 builder.Services.AddMemoryCache();
 builder.Services.Configure<TenantDirectoryOptions>(builder.Configuration.GetSection("Tenancy"));
 builder.Services.AddHttpClient<AccessTenantDirectory>(client => client.BaseAddress = new Uri("http://access"));
-builder.Services.AddScoped<ITenantDirectory>(sp => new CachedTenantDirectory(
+
+// Singleton, not Scoped: TenantResolutionMiddleware is a conventional middleware, constructed once
+// via ActivatorUtilities against the ROOT service provider on the first request that reaches it — not
+// per-request. A Scoped registration here throws "Cannot resolve scoped service ... from root
+// provider" under ValidateScopes (on by default in Development, i.e. exactly how Aspire runs this
+// locally). Nothing in this chain needs per-request state: IMemoryCache is already a singleton, and a
+// long-lived typed HttpClient instance is the supported pattern (the underlying handler is separately
+// pooled/rotated by IHttpClientFactory regardless of how long this wrapper is held).
+builder.Services.AddSingleton<ITenantDirectory>(sp => new CachedTenantDirectory(
     sp.GetRequiredService<AccessTenantDirectory>(),
     sp.GetRequiredService<IMemoryCache>(),
     sp.GetRequiredService<IOptions<TenantDirectoryOptions>>()));
